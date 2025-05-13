@@ -11,10 +11,10 @@ exclude = ["assets/*"]
 
 [dependencies]
 rusty_spine = { path = "../rusty_spine" }
-bevy = { version = "0.14.2", default-features = false, features = [
+bevy = { version = "^0.16", default-features = false, features = [
     "bevy_render",
     "bevy_asset",
     "bevy_sprite",
 ] }
-glam = { version = "0.27", features = ["mint"] }
-thiserror = "1.0.69"
+glam = { version = "^0.29", features = ["mint"] }
+thiserror = "^1"

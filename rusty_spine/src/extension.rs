@@ -16,6 +16,8 @@
 //! You can read more about these functions on the
 //! [spine-c Runtime Docs](http://en.esotericsoftware.com/spine-c#Integrating-spine-c-in-your-engine).
 
+#![allow(static_mut_refs)]
+
 use std::ffi::CStr;
 use std::fs::read;
 use std::sync::{Arc, Mutex, Once};

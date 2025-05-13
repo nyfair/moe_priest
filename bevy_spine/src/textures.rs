@@ -106,7 +106,7 @@ impl SpineTextures {
             // if none, the atlas was already deleted before getting here
             if let Some(atlas) = find_matching_atlas(atlases, texture.atlas_address) {
                 data.handles.push((texture.path.clone(), handle.clone()));
-                create_events.send(SpineTextureCreateEvent {
+                create_events.write(SpineTextureCreateEvent {
                     path: texture.path,
                     atlas,
                     handle,
@@ -116,7 +116,7 @@ impl SpineTextures {
         }
         while let Some(texture_path) = data.forget.pop() {
             if let Some(index) = data.handles.iter().position(|i| i.0 == texture_path) {
-                dispose_events.send(SpineTextureDisposeEvent {
+                dispose_events.write(SpineTextureDisposeEvent {
                     path: texture_path,
                     handle: data.handles[index].1.clone(),
                 });

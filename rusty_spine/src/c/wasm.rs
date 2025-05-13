@@ -32,7 +32,7 @@
  * SUCH DAMAGE.
  */
 
-#![allow(clippy::missing_const_for_fn)]
+#![allow(clippy::missing_const_for_fn, static_mut_refs)]
 
 use crate::c::FILE;
 use std::alloc::Layout;
