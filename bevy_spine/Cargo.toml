@@ -1,0 +1,20 @@
+[package]
+name = "bevy_spine"
+version = "0.10.1"
+edition = "2021"
+description = "Spine plugin for Bevy utilizing rusty_spine"
+homepage = "https://github.com/jabuwu/bevy_spine"
+repository = "https://github.com/jabuwu/bevy_spine"
+readme = "readme.md"
+license-file = "LICENSE"
+exclude = ["assets/*"]
+
+[dependencies]
+rusty_spine = { path = "../rusty_spine" }
+bevy = { version = "0.14.2", default-features = false, features = [
+    "bevy_render",
+    "bevy_asset",
+    "bevy_sprite",
+] }
+glam = { version = "0.27", features = ["mint"] }
+thiserror = "1.0.69"
