@@ -61,8 +61,7 @@ impl SimpleDrawer {
         mut clipper: Option<&mut SkeletonClipping>,
     ) -> Vec<SimpleRenderable> {
         let mut renderables = vec![];
-        let mut world_vertices = vec![];
-        world_vertices.resize(1000, 0.);
+        let mut world_vertices = vec![0.; 2048];
         for slot_index in 0..skeleton.slots_count() {
             let Some(slot) = skeleton.draw_order_at_index(slot_index) else {
                 continue;
