@@ -16,6 +16,7 @@ struct Viewres {
 struct SpineMenu {
     path: String,
     name: String,
+    binary: bool,
 }
 
 #[derive(Component)]
@@ -80,22 +81,24 @@ fn setup(
             TextColor(Color::srgb(0.5, 0.8, 0.7)),
             TextLayout::new_with_justify(JustifyText::Right),
         ));
-        for spine in read_to_string("assets/binary_spine.txt").unwrap().lines() {
+        for spine in read_to_string("assets/scene_spine.txt").unwrap().lines() {
             let l = spine.rfind('/').unwrap_or_default();
             let r = spine.rfind('.').unwrap_or_default();
             let path = spine[..l].to_string();
             let name = spine[l+1..r].to_string();
+            let binary = spine.ends_with("skel");
             parent.spawn((
                 Button,
+                Text::new(&name),
                 SpineMenu {
                     path,
-                    name: name.clone(),
+                    name,
+                    binary,
                 },
                 Node {
                     width: Val::Percent(90.),
                     ..default()
                 },
-                Text::new(name),
                 TextFont {
                     font: asset_server.load(FONT),
                     font_size: 20.,
@@ -124,10 +127,17 @@ fn choose_spine(
     for (interaction, mut color, mut bg_color, menu) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
-                let skeleton = SkeletonData::new_from_binary(
-                    asset_server.load(format!("{}/{}.skel", menu.path, menu.name)),
-                    asset_server.load(format!("{}/{}.atlas", menu.path, menu.name)),
-                );
+                let skeleton = if menu.binary {
+                    SkeletonData::new_from_binary(
+                        asset_server.load(format!("{}/{}.skel", menu.path, menu.name)),
+                        asset_server.load(format!("{}/{}.atlas", menu.path, menu.name)),
+                    )
+                } else {
+                    SkeletonData::new_from_json(
+                        asset_server.load(format!("{}/{}.prefab", menu.path, menu.name)),
+                        asset_server.load(format!("{}/{}.atlas", menu.path, menu.name)),
+                    )
+                };
                 let skeleton_handle = skeletons.add(skeleton);
                 for spine in view_res.cur_spine.iter() {
                     commands.entity(*spine).despawn();
@@ -197,12 +207,12 @@ fn spine_spawn(
             for animation in animation_list {
                 parent.spawn((
                     Button,
+                    Text::new(animation),
                     SceneMenu,
                     Node {
                         width: Val::Percent(90.),
                         ..default()
                     },
-                    Text::new(animation),
                     TextFont {
                         font: asset_server.load(FONT),
                         font_size: 20.,
