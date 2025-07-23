@@ -90,9 +90,9 @@ pub struct SkeletonControllerSettings {
 impl Default for SkeletonControllerSettings {
     fn default() -> Self {
         Self {
-            premultiplied_alpha: false,
+            premultiplied_alpha: true,
             cull_direction: CullDirection::Clockwise,
-            color_space: ColorSpace::SRGB,
+            color_space: ColorSpace::Linear,
         }
     }
 }

@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use bevy::{image::ImageSampler, prelude::*, render::render_resource::{FilterMode, SamplerDescriptor}, window};
-use bevy_spine::{prelude::*, textures::SpineTextureCreateEvent};
+use bevy::prelude::*;
+use bevy_spine::prelude::*;
 use std::fs::read_to_string;
 
 static FONT: &str = "resources/font/FOT-KurokaneStd-EB.otf";
@@ -13,41 +13,13 @@ struct Viewres {
 }
 
 #[derive(Component)]
-struct SceneMenu;
+struct SpineMenu {
+    path: String,
+    name: String,
+}
 
 #[derive(Component)]
-struct SpineMenu;
-
-#[derive(Default)]
-struct SetSpineTextureNearest {
-    handles: Vec<Handle<Image>>,
-}
-
-fn set_spine_texture_nearest(
-    mut local: Local<SetSpineTextureNearest>,
-    mut spine_texture_create_events: EventReader<SpineTextureCreateEvent>,
-    mut images: ResMut<Assets<Image>>,
-) {
-    for spine_texture_create_event in spine_texture_create_events.read() {
-        local
-            .handles
-            .push(spine_texture_create_event.handle.clone());
-    }
-    let mut removed_handles = vec![];
-    for (handle_index, handle) in local.handles.iter().enumerate() {
-        if let Some(image) = images.get_mut(handle) {
-            image.sampler = ImageSampler::Descriptor(SamplerDescriptor {
-                mag_filter: FilterMode::Nearest,
-                min_filter: FilterMode::Nearest,
-                ..Default::default()
-            }.into());
-            removed_handles.push(handle_index);
-        }
-    }
-    for removed_handle in removed_handles.into_iter().rev() {
-        local.handles.remove(removed_handle);
-    }
-}
+struct SceneMenu;
 
 fn main() {
     App::new()
@@ -56,7 +28,7 @@ fn main() {
             WindowPlugin {
                 primary_window: Some(Window {
                     resizable: false,
-                    mode: window::WindowMode::BorderlessFullscreen(MonitorSelection::Current),
+                    mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Current),
                     title: "Spine".to_string(),
                     ..default()
                 }),
@@ -70,7 +42,6 @@ fn main() {
         .add_systems(Update, (
             choose_spine,
             spine_spawn.in_set(SpineSet::OnReady),
-            set_spine_texture_nearest.after(SpineSystem::Load),
             choose_animation,
             hide_ui
         ))
@@ -110,14 +81,21 @@ fn setup(
             TextLayout::new_with_justify(JustifyText::Right),
         ));
         for spine in read_to_string("assets/binary_spine.txt").unwrap().lines() {
+            let l = spine.rfind('/').unwrap_or_default();
+            let r = spine.rfind('.').unwrap_or_default();
+            let path = spine[..l].to_string();
+            let name = spine[l+1..r].to_string();
             parent.spawn((
                 Button,
-                SpineMenu,
+                SpineMenu {
+                    path,
+                    name: name.clone(),
+                },
                 Node {
                     width: Val::Percent(90.),
                     ..default()
                 },
-                Text::new(spine.to_string()),
+                Text::new(name),
                 TextFont {
                     font: asset_server.load(FONT),
                     font_size: 20.,
@@ -135,7 +113,6 @@ fn choose_spine(
     asset_server: Res<AssetServer>,
     mut interaction_query: Query<(
         &Interaction,
-        &Text,
         &mut TextColor,
         &mut BackgroundColor,
         &SpineMenu,
@@ -144,12 +121,12 @@ fn choose_spine(
     mut skeletons: ResMut<Assets<SkeletonData>>,
     mut view_res: ResMut<Viewres>,
 ) {
-    for (interaction, text, mut color, mut bg_color, _) in &mut interaction_query {
+    for (interaction, mut color, mut bg_color, menu) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
                 let skeleton = SkeletonData::new_from_binary(
-                    asset_server.load(format!("spine/{}.skel.bytes", text.to_string())),
-                    asset_server.load(format!("spine/{}.atlas.txt", text.to_string())),
+                    asset_server.load(format!("{}/{}.skel", menu.path, menu.name)),
+                    asset_server.load(format!("{}/{}.atlas", menu.path, menu.name)),
                 );
                 let skeleton_handle = skeletons.add(skeleton);
                 for spine in view_res.cur_spine.iter() {

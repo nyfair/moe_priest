@@ -40,9 +40,24 @@ impl AssetLoader for AtlasLoader {
     ) -> Result<Self::Asset, Self::Error> {
         let mut bytes = Vec::new();
         reader.read_to_end(&mut bytes).await?;
+
+        let text = String::from_utf8(bytes).unwrap_or_default();
+        let mut lines: Vec<String> = text.lines().map(|line| line.to_string()).collect();
+        let mut xx_mask = false;
+        for i in 0..lines.len() {
+            let line = &lines[i];
+            if line.contains("Mosaic") {
+                xx_mask = true;
+            }
+            else if xx_mask && line.contains("size:") {
+                lines[i] = "  size: 0, 0".to_string();
+                xx_mask = false;
+            }
+        }
+
         Ok(Atlas {
             atlas: Arc::new(rusty_spine::Atlas::new(
-                &bytes,
+                &lines.join("\n").into_bytes(),
                 load_context
                     .path()
                     .parent()
@@ -183,7 +198,7 @@ impl SkeletonData {
             atlas_handle: atlas,
             kind: SkeletonDataKind::JsonFile(json),
             status: SkeletonDataStatus::Loading,
-            premultiplied_alpha: false,
+            premultiplied_alpha: true,
         }
     }
 
@@ -220,7 +235,7 @@ impl SkeletonData {
             atlas_handle: atlas,
             kind: SkeletonDataKind::BinaryFile(binary),
             status: SkeletonDataStatus::Loading,
-            premultiplied_alpha: false,
+            premultiplied_alpha: true,
         }
     }
 
