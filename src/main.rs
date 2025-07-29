@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::collections::BTreeMap;
 use std::fs::read_to_string;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
@@ -13,21 +14,26 @@ static LISTTEXT: Color = Color::srgb(0.2, 0.8, 0.2);
 static SELECTTEXT: Color = Color::srgb(0.8, 0.8, 0.8);
 static HOVERBG: Color = Color::srgb(0.1, 0.4, 0.1);
 
+#[derive(Debug)]
+struct Location {
+    path: String,
+    name: String,
+    ext: String,
+}
+
 #[derive(Resource)]
 struct Viewres {
     scene_menu: Option<Entity>,
+    anime_menu: Option<Entity>,
     cur_spine: Vec<Entity>,
-}
-
-#[derive(Component)]
-struct SpineMenu {
-    path: String,
-    name: String,
-    binary: bool,
+    spines: BTreeMap<String, Location>,
 }
 
 #[derive(Component)]
 struct SceneMenu;
+
+#[derive(Component)]
+struct AnimeMenu;
 
 fn main() {
     App::new()
@@ -36,7 +42,7 @@ fn main() {
             WindowPlugin {
                 primary_window: Some(Window {
                     resizable: false,
-                    mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
+                    mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
                     ..default()
                 }),
                 ..default()
@@ -47,7 +53,7 @@ fn main() {
         ))
         .insert_resource(ClearColor(Color::NONE))
         .insert_resource(Time::<Fixed>::from_hz(10.0))
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (setup, init_memory).chain())
         .add_systems(Update, (
             choose_spine,
             spine_spawn.in_set(SpineSet::OnReady),
@@ -59,14 +65,41 @@ fn main() {
 }
 
 fn setup(
-    asset_server: Res<AssetServer>,
     mut commands: Commands,
 ) {
+    let mut spines = BTreeMap::new();
+    if let Ok(content) = read_to_string("assets/spine.txt") {
+        for spine in content.lines() {
+            if let (Some(l), Some(r)) = (spine.rfind('/'), spine.rfind('.')) {
+                if l < r {
+                    let path = spine[..l].to_string();
+                    if let Some(rr) = path.rfind('/') {
+                        let key = path[rr+1..].to_string();
+                        let name = spine[l+1..r].to_string();
+                        let ext = spine[r+1..].to_string();
+                        spines.insert(key, Location {
+                            path,
+                            name,
+                            ext,
+                        });
+                    }
+                }
+            }
+        }
+    }
     commands.spawn(Camera2d::default());
     commands.insert_resource(Viewres {
-        scene_menu: None,
+        anime_menu: None,
         cur_spine: vec![],
+        spines,
     });
+}
+
+fn init_memory(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    view_res: Res<Viewres>,
+) {
     commands.spawn((
         Visibility::Visible,
         Node {
@@ -97,20 +130,12 @@ fn setup(
                 ..default()
             },
         )).with_children(|parent| {
-            for spine in read_to_string("assets/scene_spine.txt").unwrap().lines() {
-                let l = spine.rfind('/').unwrap_or_default();
-                let r = spine.rfind('.').unwrap_or_default();
-                let path = spine[..l].to_string();
-                let name = spine[l+1..r].to_string();
-                let binary = spine.ends_with("skel");
+            for bundle_name in view_res.spines.keys()
+                .filter(|x| x.starts_with("r18")) {
                 parent.spawn((
                     Button,
-                    Text::new(&name),
-                    SpineMenu {
-                        path,
-                        name,
-                        binary,
-                    },
+                    Text::new(bundle_name),
+                    SceneMenu,
                     TextFont {
                         font: asset_server.load(FONT),
                         font_size: 20.,
@@ -129,38 +154,42 @@ fn choose_spine(
     asset_server: Res<AssetServer>,
     mut interaction_query: Query<(
         &Interaction,
+        &Text,
         &mut TextColor,
         &mut BackgroundColor,
-        &SpineMenu,
+        &SceneMenu,
     ), (Changed<Interaction>, With<Button>),>,
     mut commands: Commands,
     mut skeletons: ResMut<Assets<SkeletonData>>,
     mut view_res: ResMut<Viewres>,
 ) {
-    for (interaction, mut color, mut bg_color, menu) in &mut interaction_query {
+    for (interaction, text, mut color, mut bg_color, _) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
-                let skeleton = if menu.binary {
-                    SkeletonData::new_from_binary(
-                        asset_server.load(format!("{}/{}.skel", menu.path, menu.name)),
-                        asset_server.load(format!("{}/{}.atlas", menu.path, menu.name)),
-                    )
-                } else {
-                    SkeletonData::new_from_json(
-                        asset_server.load(format!("{}/{}.prefab", menu.path, menu.name)),
-                        asset_server.load(format!("{}/{}.atlas", menu.path, menu.name)),
-                    )
-                };
-                let skeleton_handle = skeletons.add(skeleton);
-                for spine in view_res.cur_spine.iter() {
-                    commands.entity(*spine).despawn();
+                let bundle_name = &text.to_string();
+                if let Some(file) = view_res.spines.get(bundle_name) {
+                    let skeleton = if file.ext == "skel" {
+                        SkeletonData::new_from_binary(
+                            asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
+                            asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
+                        )
+                    } else {
+                        SkeletonData::new_from_json(
+                            asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
+                            asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
+                        )
+                    };
+                    let skeleton_handle = skeletons.add(skeleton);
+                    for spine in view_res.cur_spine.iter() {
+                        commands.entity(*spine).despawn();
+                    }
+                    let spine = commands.spawn(SpineBundle {
+                        skeleton: skeleton_handle.clone().into(),
+                        transform: Transform::from_xyz(0., 0., 0.).with_scale(Vec3::ONE * 0.5),
+                        ..Default::default()
+                    }).id();
+                    view_res.cur_spine = vec![spine];
                 }
-                let spine = commands.spawn(SpineBundle {
-                    skeleton: skeleton_handle.clone().into(),
-                    transform: Transform::from_xyz(0., 0., 0.).with_scale(Vec3::ONE * 0.5),
-                    ..Default::default()
-                }).id();
-                view_res.cur_spine = vec![spine];
             },
             Interaction::Hovered => {
                 *color = SELECTTEXT.into();
@@ -182,9 +211,9 @@ fn spine_spawn(
     mut view_res: ResMut<Viewres>,
 ) {
     for event in spine_ready_event.read() {
-        if let Some(entity) = view_res.scene_menu {
+        if let Some(entity) = view_res.anime_menu {
             commands.entity(entity).despawn();
-            view_res.scene_menu = None;
+            view_res.anime_menu = None;
         }
         let mut animation_list = Vec::new();
         if let Ok(mut spine) = spine_query.get_mut(event.entity) {
@@ -223,7 +252,7 @@ fn spine_spawn(
                 parent.spawn((
                     Button,
                     Text::new(animation),
-                    SceneMenu,
+                    AnimeMenu,
                     TextFont {
                         font: asset_server.load(FONT),
                         font_size: 20.,
@@ -234,7 +263,7 @@ fn spine_spawn(
                 ));
             }
         }).id();
-        view_res.scene_menu = Some(menu);
+        view_res.anime_menu = Some(menu);
     };
 }
 
@@ -244,7 +273,7 @@ fn choose_animation(
         &Text,
         &mut TextColor,
         &mut BackgroundColor,
-        &SceneMenu,
+        &AnimeMenu,
     ), (Changed<Interaction>, With<Button>),>,
     mut spine_query: Query<&mut Spine>,
 ) {
