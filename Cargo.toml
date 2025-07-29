@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 bevy = "^0.16"
 bevy_spine = { path = "bevy_spine" }
+bevy_transform_interpolation = "^0.2"

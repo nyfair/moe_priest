@@ -1,10 +1,17 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use bevy::prelude::*;
-use bevy_spine::prelude::*;
 use std::fs::read_to_string;
+use bevy::input::mouse::{MouseMotion, MouseWheel};
+use bevy::prelude::*;
+use bevy::window::{PrimaryWindow, WindowMode};
+use bevy_spine::prelude::*;
+use bevy_transform_interpolation::prelude::*;
 
 static FONT: &str = "resources/font/FOT-KurokaneStd-EB.otf";
+static HEADTEXT: Color = Color::srgb(0.5, 0.8, 0.7);
+static LISTTEXT: Color = Color::srgb(0.2, 0.8, 0.2);
+static SELECTTEXT: Color = Color::srgb(0.8, 0.8, 0.8);
+static HOVERBG: Color = Color::srgb(0.1, 0.4, 0.1);
 
 #[derive(Resource)]
 struct Viewres {
@@ -29,23 +36,25 @@ fn main() {
             WindowPlugin {
                 primary_window: Some(Window {
                     resizable: false,
-                    mode: bevy::window::WindowMode::BorderlessFullscreen(MonitorSelection::Current),
-                    title: "Spine".to_string(),
+                    mode: WindowMode::BorderlessFullscreen(MonitorSelection::Primary),
                     ..default()
                 }),
                 ..default()
             }
         ),
             SpinePlugin,
+            TransformInterpolationPlugin::interpolate_all(),
         ))
-        .insert_resource(ClearColor(Color::srgb(0., 0., 0.)))
+        .insert_resource(ClearColor(Color::NONE))
+        .insert_resource(Time::<Fixed>::from_hz(10.0))
         .add_systems(Startup, setup)
         .add_systems(Update, (
             choose_spine,
             spine_spawn.in_set(SpineSet::OnReady),
             choose_animation,
-            hide_ui
+            hide_ui,
         ))
+        .add_systems(FixedUpdate, (scroll, mouse_motion))
         .run();
 }
 
@@ -67,48 +76,52 @@ fn setup(
             top: Val::Percent(1.),
             align_items: AlignItems::End,
             flex_direction: FlexDirection::Column,
-            overflow: Overflow::scroll_y(),
             ..default()
         },
     )).with_children(|parent| {
         parent.spawn((
-            Text::new("Select Character"),
+            Text::new("Select Scenario"),
             TextFont {
                 font: asset_server.load(FONT),
                 font_size: 20.,
                 ..default()
             },
-            TextColor(Color::srgb(0.5, 0.8, 0.7)),
+            TextColor(HEADTEXT),
             TextLayout::new_with_justify(JustifyText::Right),
         ));
-        for spine in read_to_string("assets/scene_spine.txt").unwrap().lines() {
-            let l = spine.rfind('/').unwrap_or_default();
-            let r = spine.rfind('.').unwrap_or_default();
-            let path = spine[..l].to_string();
-            let name = spine[l+1..r].to_string();
-            let binary = spine.ends_with("skel");
-            parent.spawn((
-                Button,
-                Text::new(&name),
-                SpineMenu {
-                    path,
-                    name,
-                    binary,
-                },
-                Node {
-                    width: Val::Percent(90.),
-                    ..default()
-                },
-                TextFont {
-                    font: asset_server.load(FONT),
-                    font_size: 20.,
-                    ..default()
-                },
-                TextColor(Color::srgb(0.2, 0.8, 0.2)),
-                BackgroundColor(Color::srgb(0., 0., 0.)),
-                TextLayout::new_with_justify(JustifyText::Right),
-            ));
-        }
+        parent.spawn((
+            Node {
+                align_items: AlignItems::End,
+                flex_direction: FlexDirection::Column,
+                overflow: Overflow::scroll_y(),
+                ..default()
+            },
+        )).with_children(|parent| {
+            for spine in read_to_string("assets/scene_spine.txt").unwrap().lines() {
+                let l = spine.rfind('/').unwrap_or_default();
+                let r = spine.rfind('.').unwrap_or_default();
+                let path = spine[..l].to_string();
+                let name = spine[l+1..r].to_string();
+                let binary = spine.ends_with("skel");
+                parent.spawn((
+                    Button,
+                    Text::new(&name),
+                    SpineMenu {
+                        path,
+                        name,
+                        binary,
+                    },
+                    TextFont {
+                        font: asset_server.load(FONT),
+                        font_size: 20.,
+                        ..default()
+                    },
+                    TextColor(LISTTEXT),
+                    BackgroundColor(Color::NONE),
+                    TextLayout::new_with_justify(JustifyText::Right),
+                ));
+            }
+        });
     });
 }
 
@@ -150,12 +163,12 @@ fn choose_spine(
                 view_res.cur_spine = vec![spine];
             },
             Interaction::Hovered => {
-                *color = Color::srgb(0.8, 0.8, 0.8).into();
-                *bg_color = Color::srgb(0.1, 0.4, 0.1).into();
+                *color = SELECTTEXT.into();
+                *bg_color = HOVERBG.into();
             },
             _ => {
-                *color = Color::srgb(0.2, 0.8, 0.2).into();
-                *bg_color = Color::srgb(0., 0., 0.).into();
+                *color = LISTTEXT.into();
+                *bg_color = Color::NONE.into();
             }
         }
     }
@@ -196,30 +209,28 @@ fn spine_spawn(
             },
         )).with_children(|parent| {
             parent.spawn((
-                Text::new("Select Animation"),
+                Button,
+                Text::new("Choose Animation"),
                 TextFont {
                     font: asset_server.load(FONT),
                     font_size: 20.,
                     ..default()
                 },
-                TextColor(Color::srgb(0.5, 0.8, 0.7)),
+                TextColor(HEADTEXT),
+                BackgroundColor(Color::NONE),
             ));
             for animation in animation_list {
                 parent.spawn((
                     Button,
                     Text::new(animation),
                     SceneMenu,
-                    Node {
-                        width: Val::Percent(90.),
-                        ..default()
-                    },
                     TextFont {
                         font: asset_server.load(FONT),
                         font_size: 20.,
                         ..default()
                     },
-                    TextColor(Color::srgb(0.2, 0.8, 0.2)),
-                    BackgroundColor(Color::srgb(0., 0., 0.)),
+                    TextColor(LISTTEXT),
+                    BackgroundColor(Color::NONE),
                 ));
             }
         }).id();
@@ -245,21 +256,67 @@ fn choose_animation(
                 }
             },
             Interaction::Hovered => {
-                *color = Color::srgb(0.8, 0.8, 0.8).into();
-                *bg_color = Color::srgb(0.1, 0.4, 0.1).into();
+                *color = SELECTTEXT.into();
+                *bg_color = HOVERBG.into();
             },
             _ => {
-                *color = Color::srgb(0.2, 0.8, 0.2).into();
-                *bg_color = Color::srgb(0., 0., 0.).into();
+                *color = LISTTEXT.into();
+                *bg_color = Color::NONE.into();
             }
         }
     }
 }
 
-fn hide_ui(mut query: Query<&mut Visibility>, button: Res<ButtonInput<MouseButton>>) {
-    if button.just_released(MouseButton::Right) {
-        for mut v in &mut query {
+fn hide_ui(
+    mut ui: Query<&mut Visibility>,
+    button: Res<ButtonInput<MouseButton>>,
+) {
+    if button.just_released(MouseButton::Middle) {
+        for mut v in &mut ui {
             v.toggle_visible_hidden();
+        }
+    }
+}
+
+fn scroll(
+    mut query: Query<&mut Transform, With<Spine>>,
+    mut scroll: EventReader<MouseWheel>,
+    mut scrolled_query: Query<&mut ScrollPosition>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    time: Res<Time>,
+) {
+    for ev in scroll.read() {
+        if ev.y == 0. {
+            break
+        }
+        let delta_secs = time.delta_secs();
+        if let Some(pos) = window.cursor_position() {
+            if pos.x / window.width() > 0.88 {
+                for mut scroll_position in &mut scrolled_query {
+                    scroll_position.offset_y -= ev.y * 6666. * delta_secs;
+                }
+            } else {
+                for mut spine in &mut query {
+                    spine.scale += ev.y / 10. * delta_secs;
+                }
+            }
+        }
+    }
+}
+
+fn mouse_motion(
+    mut query: Query<&mut Transform, With<Spine>>,
+    mut motion: EventReader<MouseMotion>,
+    button: Res<ButtonInput<MouseButton>>,
+    time: Res<Time>,
+) {
+    if button.pressed(MouseButton::Right) {
+        let delta_secs = time.delta_secs();
+        for ev in motion.read() {
+            for mut spine in &mut query {
+                spine.translation.x += ev.delta.x * 6. * delta_secs;
+                spine.translation.y -= ev.delta.y * 6. * delta_secs;
+            }
         }
     }
 }
