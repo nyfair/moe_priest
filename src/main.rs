@@ -21,12 +21,19 @@ struct Location {
     ext: String,
 }
 
+enum ListMode {
+    Gallery,
+    Motion,
+    Memory,
+}
+
 #[derive(Resource)]
 struct Viewres {
     scene_menu: Option<Entity>,
     anime_menu: Option<Entity>,
     cur_spine: Vec<Entity>,
     spines: BTreeMap<String, Location>,
+    events: BTreeMap<String, Location>,
 }
 
 #[derive(Component)]
@@ -34,6 +41,12 @@ struct SceneMenu;
 
 #[derive(Component)]
 struct AnimeMenu;
+
+#[derive(Component)]
+struct ModeMenu;
+
+#[derive(Event)]
+struct SceneEvent(ListMode);
 
 fn main() {
     App::new()
@@ -53,11 +66,14 @@ fn main() {
         ))
         .insert_resource(ClearColor(Color::NONE))
         .insert_resource(Time::<Fixed>::from_hz(10.0))
-        .add_systems(Startup, (setup, init_memory).chain())
+        .add_event::<SceneEvent>()
+        .add_systems(Startup, setup)
         .add_systems(Update, (
-            choose_spine,
+            list_scene,
+            choose_scene,
             spine_spawn.in_set(SpineSet::OnReady),
             choose_animation,
+            choose_mode,
             hide_ui,
         ))
         .add_systems(FixedUpdate, (scroll, mouse_motion))
@@ -65,7 +81,9 @@ fn main() {
 }
 
 fn setup(
+    asset_server: Res<AssetServer>,
     mut commands: Commands,
+    mut event: EventWriter<SceneEvent>,
 ) {
     let mut spines = BTreeMap::new();
     if let Ok(content) = read_to_string("assets/spine.txt") {
@@ -87,70 +105,133 @@ fn setup(
             }
         }
     }
-    commands.spawn(Camera2d::default());
+    let mut events = BTreeMap::new();
+    if let Ok(content) = read_to_string("assets/event.txt") {
+        for event in content.lines() {
+            if let (Some(l), Some(r)) = (event.rfind('/'), event.find('.')) {
+                if l < r {
+                    let path = event[..l].to_string();
+                    let name = event[l+1..r].to_string();
+                    let ext = event[r+1..].to_string();
+                    events.insert(name.clone(), Location {
+                        path,
+                        name,
+                        ext,
+                    });
+                }
+            }
+        }
+    }
+
+    commands.spawn(Camera2d);
     commands.insert_resource(Viewres {
+        scene_menu: None,
         anime_menu: None,
         cur_spine: vec![],
         spines,
+        events,
     });
-}
 
-fn init_memory(
-    asset_server: Res<AssetServer>,
-    mut commands: Commands,
-    view_res: Res<Viewres>,
-) {
     commands.spawn((
         Visibility::Visible,
         Node {
             width: Val::Percent(11.),
-            height: Val::Percent(96.),
-            left: Val::Percent(88.),
-            top: Val::Percent(1.),
-            align_items: AlignItems::End,
-            flex_direction: FlexDirection::Column,
+            height: Val::Percent(26.),
+            left: Val::Percent(1.),
+            bottom: Val::Percent(1.),
+            flex_direction: FlexDirection::ColumnReverse,
+            align_self: AlignSelf::End,
+            row_gap: Val::Percent(1.),
             ..default()
         },
     )).with_children(|parent| {
-        parent.spawn((
-            Text::new("Select Scenario"),
-            TextFont {
-                font: asset_server.load(FONT),
-                font_size: 20.,
-                ..default()
-            },
-            TextColor(HEADTEXT),
-            TextLayout::new_with_justify(JustifyText::Right),
-        ));
-        parent.spawn((
+        for m in ["Gallery", "Motion", "Memory"] {
+            parent.spawn((
+                Button,
+                Text::new(m),
+                ModeMenu,
+                TextFont {
+                    font: asset_server.load(FONT),
+                    font_size: 24.,
+                    ..default()
+                },
+                TextColor(HEADTEXT),
+                BackgroundColor(Color::NONE),
+            ));
+        }
+    });
+    event.write(SceneEvent(ListMode::Gallery));
+}
+
+fn list_scene(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    mut view_res: ResMut<Viewres>,
+    mut events: EventReader<SceneEvent>,
+) {
+    if let Some(event) = events.read().last() {
+        if let Some(entity) = view_res.scene_menu {
+            commands.entity(entity).despawn();
+            view_res.scene_menu = None;
+        }
+        let menu = commands.spawn((
+            Visibility::Visible,
             Node {
+                width: Val::Percent(11.),
+                height: Val::Percent(96.),
+                left: Val::Percent(88.),
+                top: Val::Percent(1.),
                 align_items: AlignItems::End,
                 flex_direction: FlexDirection::Column,
-                overflow: Overflow::scroll_y(),
                 ..default()
             },
         )).with_children(|parent| {
-            for bundle_name in view_res.spines.keys()
-                .filter(|x| x.starts_with("r18")) {
-                parent.spawn((
-                    Button,
-                    Text::new(bundle_name),
-                    SceneMenu,
-                    TextFont {
-                        font: asset_server.load(FONT),
-                        font_size: 20.,
-                        ..default()
-                    },
-                    TextColor(LISTTEXT),
-                    BackgroundColor(Color::NONE),
-                    TextLayout::new_with_justify(JustifyText::Right),
-                ));
-            }
-        });
-    });
+            parent.spawn((
+                Text::new("Select Scenario"),
+                TextFont {
+                    font: asset_server.load(FONT),
+                    font_size: 24.,
+                    ..default()
+                },
+                TextColor(HEADTEXT),
+                TextLayout::new_with_justify(JustifyText::Right),
+            ));
+            parent.spawn((
+                Node {
+                    align_items: AlignItems::End,
+                    flex_direction: FlexDirection::Column,
+                    overflow: Overflow::scroll_y(),
+                    ..default()
+                },
+            )).with_children(|parent| {
+                let (items, scene_filter):
+                (&BTreeMap<_, _>, fn(&&String) -> bool) = match event.0 {
+                    ListMode::Memory => (&view_res.events, |_| true),
+                    ListMode::Gallery => (&view_res.spines, |x| x.starts_with("r18")),
+                    ListMode::Motion => (&view_res.spines, |x| !x.starts_with("r18")),
+                };
+                for bundle_name in items.keys().filter(scene_filter) {
+                    parent.spawn((
+                        Button,
+                        Text::new(bundle_name),
+                        SceneMenu,
+                        TextFont {
+                            font: asset_server.load(FONT),
+                            font_size: 20.,
+                            ..default()
+                        },
+                        TextColor(LISTTEXT),
+                        BackgroundColor(Color::NONE),
+                        TextLayout::new_with_justify(JustifyText::Right),
+                    ));
+                }
+            });
+        }).id();
+        view_res.scene_menu = Some(menu);
+    }
 }
 
-fn choose_spine(
+fn choose_scene(
     asset_server: Res<AssetServer>,
     mut interaction_query: Query<(
         &Interaction,
@@ -230,7 +311,7 @@ fn spine_spawn(
             Visibility::Visible,
             Node {
                 width: Val::Percent(11.),
-                height: Val::Percent(96.),
+                height: Val::Percent(66.),
                 left: Val::Percent(1.),
                 top: Val::Percent(1.),
                 flex_direction: FlexDirection::Column,
@@ -239,10 +320,10 @@ fn spine_spawn(
         )).with_children(|parent| {
             parent.spawn((
                 Button,
-                Text::new("Choose Animation"),
+                Text::new("Select Action"),
                 TextFont {
                     font: asset_server.load(FONT),
-                    font_size: 20.,
+                    font_size: 24.,
                     ..default()
                 },
                 TextColor(HEADTEXT),
@@ -296,6 +377,35 @@ fn choose_animation(
     }
 }
 
+fn choose_mode(
+    mut interaction_query: Query<(
+        &Interaction,
+        &Text,
+        &mut BackgroundColor,
+        &ModeMenu,
+    ), (Changed<Interaction>, With<Button>),>,
+    mut event: EventWriter<SceneEvent>,
+) {
+    for (interaction, text, mut bg_color, _) in &mut interaction_query {
+        match *interaction {
+            Interaction::Pressed => {
+                let mode = match text.as_str() {
+                    "Motion" => ListMode::Motion,
+                    "Memory" => ListMode::Memory,
+                    _ => ListMode::Gallery,
+                };
+                event.write(SceneEvent(mode));
+            },
+            Interaction::Hovered => {
+                *bg_color = HOVERBG.into();
+            },
+            _ => {
+                *bg_color = Color::NONE.into();
+            }
+        }
+    }
+}
+
 fn hide_ui(
     mut ui: Query<&mut Visibility>,
     button: Res<ButtonInput<MouseButton>>,
@@ -320,13 +430,13 @@ fn scroll(
         }
         let delta_secs = time.delta_secs();
         if let Some(pos) = window.cursor_position() {
-            if pos.x / window.width() > 0.88 {
+            if pos.x > window.width() * 0.88 {
                 for mut scroll_position in &mut scrolled_query {
                     scroll_position.offset_y -= ev.y * 6666. * delta_secs;
                 }
             } else {
                 for mut spine in &mut query {
-                    spine.scale += ev.y / 10. * delta_secs;
+                    spine.scale += ev.y * 0.1 * delta_secs;
                 }
             }
         }
