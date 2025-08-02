@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod utage4;
+
 use std::collections::BTreeMap;
 use std::fs::read_to_string;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
@@ -54,7 +56,6 @@ fn main() {
             DefaultPlugins.set(
             WindowPlugin {
                 primary_window: Some(Window {
-                    resizable: false,
                     mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
                     ..default()
                 }),
@@ -65,7 +66,7 @@ fn main() {
             TransformInterpolationPlugin::interpolate_all(),
         ))
         .insert_resource(ClearColor(Color::NONE))
-        .insert_resource(Time::<Fixed>::from_hz(10.0))
+        .insert_resource(Time::<Fixed>::from_hz(5.))
         .add_event::<SceneEvent>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
@@ -85,6 +86,9 @@ fn setup(
     mut commands: Commands,
     mut event: EventWriter<SceneEvent>,
 ) {
+    let vn = utage4::parse_chapter().unwrap();
+    info!("{:?}", vn.layer);
+
     let mut spines = BTreeMap::new();
     if let Ok(content) = read_to_string("assets/spine.txt") {
         for spine in content.lines() {
