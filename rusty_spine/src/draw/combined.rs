@@ -63,7 +63,7 @@ impl CombinedDrawer {
         let mut indices = vec![];
         let mut blend_mode = BlendMode::Normal;
         let mut attachment_renderer_object = None;
-        let mut world_vertices = vec![0.; 2048];
+        let mut world_vertices = vec![0.; 8192];
         let mut vertex_base: u16 = 0;
         let mut index_base: u16 = 0;
         for slot_index in 0..skeleton.slots_count() {

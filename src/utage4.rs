@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::error::Error;
-use std::fs;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -26,18 +25,17 @@ struct Root {
 
 #[derive(Debug, Default, Serialize)]
 pub struct VNConfig {
-    pub character: Vec<CharacterEntry>,
-    pub layer: Vec<LayerEntry>,
-    pub param: Vec<ParamEntry>,
-    pub sound: Vec<SoundEntry>,
-    pub texture: Vec<TextureEntry>,
+    pub character: HashMap<String, CharacterEntry>,
+    pub layer: HashMap<String, LayerEntry>,
+    pub param: HashMap<String, ParamEntry>,
+    pub sound: HashMap<String, SoundEntry>,
+    pub texture: HashMap<String, TextureEntry>,
 }
 
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CharacterEntry {
     pub label: Option<String>,
-    pub character_name: Option<String>,
     pub name_text: Option<String>,
     pub pattern: Option<String>,
     pub x: Option<String>,
@@ -62,7 +60,6 @@ pub struct CharacterEntry {
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LayerEntry {
-    pub layer_name: Option<String>,
     #[serde(rename = "type")]
     pub entry_type: Option<String>,
     pub x: Option<String>,
@@ -85,7 +82,6 @@ pub struct LayerEntry {
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ParamEntry {
-    pub label: Option<String>,
     #[serde(rename = "type")]
     pub entry_type: Option<String>,
     pub value: Option<String>,
@@ -95,7 +91,6 @@ pub struct ParamEntry {
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SoundEntry {
-    pub label: Option<String>,
     pub title: Option<String>,
     #[serde(rename = "type")]
     pub entry_type: Option<String>,
@@ -107,7 +102,6 @@ pub struct SoundEntry {
 #[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextureEntry {
-    pub label: Option<String>,
     #[serde(rename = "type")]
     pub entry_type: Option<String>,
     pub file_name: Option<String>,
@@ -126,6 +120,66 @@ pub struct TextureEntry {
     pub cg_categolly: Option<String>,
 }
 
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ParticleEntry {
+    pub label: Option<String>,
+    #[serde(rename = "type")]
+    pub entry_type: Option<String>,
+    pub file_name: Option<String>,
+    pub file_type: Option<String>,
+    pub x: Option<String>,
+    pub y: Option<String>,
+    pub z: Option<String>,
+    pub pivot: Option<String>,
+    pub scale: Option<String>,
+    pub conditional: Option<String>,
+    pub sub_file_name: Option<String>,
+    pub animation: Option<String>,
+    pub render_texture: Option<String>,
+    pub render_rect: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EyeBlinkEntry {
+    pub label: Option<String>,
+    #[serde(rename = "type")]
+    pub entry_type: Option<String>,
+    pub file_name: Option<String>,
+    pub file_type: Option<String>,
+    pub x: Option<String>,
+    pub y: Option<String>,
+    pub z: Option<String>,
+    pub pivot: Option<String>,
+    pub scale: Option<String>,
+    pub conditional: Option<String>,
+    pub sub_file_name: Option<String>,
+    pub animation: Option<String>,
+    pub render_texture: Option<String>,
+    pub render_rect: Option<String>,
+}
+
+#[derive(Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LipSynchEntry {
+    pub label: Option<String>,
+    #[serde(rename = "type")]
+    pub entry_type: Option<String>,
+    pub file_name: Option<String>,
+    pub file_type: Option<String>,
+    pub x: Option<String>,
+    pub y: Option<String>,
+    pub z: Option<String>,
+    pub pivot: Option<String>,
+    pub scale: Option<String>,
+    pub conditional: Option<String>,
+    pub sub_file_name: Option<String>,
+    pub animation: Option<String>,
+    pub render_texture: Option<String>,
+    pub render_rect: Option<String>,
+}
+
 fn row_to_map<'a>(row: &'a InputRow, headers: &'a [String]) -> HashMap<&'a str, &'a str> {
     headers
         .iter()
@@ -140,9 +194,8 @@ fn row_to_map<'a>(row: &'a InputRow, headers: &'a [String]) -> HashMap<&'a str, 
         .collect()
 }
 
-pub fn parse_chapter() -> Result<VNConfig, Box<dyn Error>> {
-    let json_content = fs::read_to_string("assets/advscene/scenariochapter/config.chapter.json")?;
-    let root: Root = serde_json::from_str(&json_content)?;
+pub fn parse_chapter(content: String) -> Result<VNConfig, Box<dyn Error>> {
+    let root: Root = serde_json::from_str(&content)?;
     let mut cfg = VNConfig::default();
 
     for setting in root.setting_list {
@@ -158,31 +211,36 @@ pub fn parse_chapter() -> Result<VNConfig, Box<dyn Error>> {
                     if row.is_comment_out == 1 { continue; }
                     let map = row_to_map(row, headers);
                     if map.is_empty() { continue; }
-
-                    let entry = CharacterEntry {
-                        label: Some(row.strings[2].clone()),
-                        character_name: map.get("CharacterName").map(|s| s.to_string()),
-                        name_text: map.get("NameText").map(|s| s.to_string()),
-                        pattern: map.get("Pattern").map(|s| s.to_string()),
-                        x: map.get("X").map(|s| s.to_string()),
-                        y: map.get("Y").map(|s| s.to_string()),
-                        z: map.get("Z").map(|s| s.to_string()),
-                        pivot: map.get("Pivot").map(|s| s.to_string()),
-                        scale: map.get("Scale").map(|s| s.to_string()),
-                        conditional: map.get("Conditional").map(|s| s.to_string()),
-                        file_name: map.get("FileName").map(|s| s.to_string()),
-                        sub_file_name: map.get("SubFileName").map(|s| s.to_string()),
-                        file_type: map.get("FileType").map(|s| s.to_string()),
-                        animation: map.get("Animation").map(|s| s.to_string()),
-                        render_texture: map.get("RenderTexture").map(|s| s.to_string()),
-                        render_rect: map.get("RenderRect").map(|s| s.to_string()),
-                        eye_blink: map.get("EyeBlink").map(|s| s.to_string()),
-                        lip_synch: map.get("LipSynch").map(|s| s.to_string()),
-                        icon: map.get("Icon").map(|s| s.to_string()),
-                        icon_sub_file_name: map.get("IconSubFileName").map(|s| s.to_string()),
-                        icon_rect: map.get("IconRect").map(|s| s.to_string()),
-                    };
-                    cfg.character.push(entry);
+                    if row.strings.len() > 1 {}
+                    if let Some(name) = map.get("CharacterName").map(|s| s.to_string()) {
+                        let entry = CharacterEntry {
+                            label: if row.strings.len() > 2 {
+                                Some(row.strings[2].clone())
+                            } else {
+                                None
+                            },
+                            name_text: map.get("NameText").map(|s| s.to_string()),
+                            pattern: map.get("Pattern").map(|s| s.to_string()),
+                            x: map.get("X").map(|s| s.to_string()),
+                            y: map.get("Y").map(|s| s.to_string()),
+                            z: map.get("Z").map(|s| s.to_string()),
+                            pivot: map.get("Pivot").map(|s| s.to_string()),
+                            scale: map.get("Scale").map(|s| s.to_string()),
+                            conditional: map.get("Conditional").map(|s| s.to_string()),
+                            file_name: map.get("FileName").map(|s| s.to_string()),
+                            sub_file_name: map.get("SubFileName").map(|s| s.to_string()),
+                            file_type: map.get("FileType").map(|s| s.to_string()),
+                            animation: map.get("Animation").map(|s| s.to_string()),
+                            render_texture: map.get("RenderTexture").map(|s| s.to_string()),
+                            render_rect: map.get("RenderRect").map(|s| s.to_string()),
+                            eye_blink: map.get("EyeBlink").map(|s| s.to_string()),
+                            lip_synch: map.get("LipSynch").map(|s| s.to_string()),
+                            icon: map.get("Icon").map(|s| s.to_string()),
+                            icon_sub_file_name: map.get("IconSubFileName").map(|s| s.to_string()),
+                            icon_rect: map.get("IconRect").map(|s| s.to_string()),
+                        };
+                        cfg.character.insert(name, entry);
+                    }
                 }
             }
 
@@ -191,25 +249,27 @@ pub fn parse_chapter() -> Result<VNConfig, Box<dyn Error>> {
                     if row.is_comment_out == 1 { continue; }
                     let map = row_to_map(row, headers);
                     if map.is_empty() { continue; }
-                    cfg.layer.push(LayerEntry {
-                        layer_name: map.get("LayerName").map(|s| s.to_string()),
-                        entry_type: map.get("Type").map(|s| s.to_string()),
-                        x: map.get("X").map(|s| s.to_string()),
-                        y: map.get("Y").map(|s| s.to_string()),
-                        order: map.get("Order").map(|s| s.to_string()),
-                        layer_mask: map.get("LayerMask").map(|s| s.to_string()),
-                        scale_x: map.get("ScaleX").map(|s| s.to_string()),
-                        scale_y: map.get("ScaleY").map(|s| s.to_string()),
-                        flip_x: map.get("FlipX").map(|s| s.to_string()),
-                        flip_y: map.get("FlipY").map(|s| s.to_string()),
-                        width: map.get("Width").map(|s| s.to_string()),
-                        height: map.get("Height").map(|s| s.to_string()),
-                        border_left: map.get("BorderLeft").map(|s| s.to_string()),
-                        border_right: map.get("BorderRight").map(|s| s.to_string()),
-                        border_top: map.get("BorderTop").map(|s| s.to_string()),
-                        border_bottom: map.get("BorderBottom").map(|s| s.to_string()),
-                        align: map.get("Align").map(|s| s.to_string()),
-                    });
+                    if let Some(name) = map.get("LayerName").map(|s| s.to_string()) {
+                        let entry = LayerEntry {
+                            entry_type: map.get("Type").map(|s| s.to_string()),
+                            x: map.get("X").map(|s| s.to_string()),
+                            y: map.get("Y").map(|s| s.to_string()),
+                            order: map.get("Order").map(|s| s.to_string()),
+                            layer_mask: map.get("LayerMask").map(|s| s.to_string()),
+                            scale_x: map.get("ScaleX").map(|s| s.to_string()),
+                            scale_y: map.get("ScaleY").map(|s| s.to_string()),
+                            flip_x: map.get("FlipX").map(|s| s.to_string()),
+                            flip_y: map.get("FlipY").map(|s| s.to_string()),
+                            width: map.get("Width").map(|s| s.to_string()),
+                            height: map.get("Height").map(|s| s.to_string()),
+                            border_left: map.get("BorderLeft").map(|s| s.to_string()),
+                            border_right: map.get("BorderRight").map(|s| s.to_string()),
+                            border_top: map.get("BorderTop").map(|s| s.to_string()),
+                            border_bottom: map.get("BorderBottom").map(|s| s.to_string()),
+                            align: map.get("Align").map(|s| s.to_string()),
+                        };
+                        cfg.layer.insert(name, entry);
+                    }
                 }
             }
 
@@ -218,12 +278,14 @@ pub fn parse_chapter() -> Result<VNConfig, Box<dyn Error>> {
                     if row.is_comment_out == 1 { continue; }
                     let map = row_to_map(row, headers);
                     if map.is_empty() { continue; }
-                    cfg.param.push(ParamEntry {
-                        label: map.get("Label").map(|s| s.to_string()),
-                        entry_type: map.get("Type").map(|s| s.to_string()),
-                        value: map.get("Value").map(|s| s.to_string()),
-                        file_type: map.get("FileType").map(|s| s.to_string()),
-                    });
+                    if let Some(label) = map.get("Label").map(|s| s.to_string()) {
+                        let entry = ParamEntry {
+                            entry_type: map.get("Type").map(|s| s.to_string()),
+                            value: map.get("Value").map(|s| s.to_string()),
+                            file_type: map.get("FileType").map(|s| s.to_string()),
+                        };
+                        cfg.param.insert(label, entry);
+                    }
                 }
             }
 
@@ -232,14 +294,16 @@ pub fn parse_chapter() -> Result<VNConfig, Box<dyn Error>> {
                     if row.is_comment_out == 1 { continue; }
                     let map = row_to_map(row, headers);
                     if map.is_empty() { continue; }
-                    cfg.sound.push(SoundEntry {
-                        label: map.get("Label").map(|s| s.to_string()),
-                        title: map.get("Title").map(|s| s.to_string()),
-                        entry_type: map.get("Type").map(|s| s.to_string()),
-                        file_name: map.get("FileName").map(|s| s.to_string()),
-                        intro_time: map.get("IntroTime").map(|s| s.to_string()),
-                        volume: map.get("Volume").map(|s| s.to_string()),
-                    });
+                    if let Some(label) = map.get("Label").map(|s| s.to_string()) {
+                        let entry = SoundEntry {
+                            title: map.get("Title").map(|s| s.to_string()),
+                            entry_type: map.get("Type").map(|s| s.to_string()),
+                            file_name: map.get("FileName").map(|s| s.to_string()),
+                            intro_time: map.get("IntroTime").map(|s| s.to_string()),
+                            volume: map.get("Volume").map(|s| s.to_string()),
+                        };
+                        cfg.sound.insert(label, entry);
+                    }
                 }
             }
 
@@ -248,28 +312,30 @@ pub fn parse_chapter() -> Result<VNConfig, Box<dyn Error>> {
                     if row.is_comment_out == 1 { continue; }
                     let map = row_to_map(row, headers);
                     if map.is_empty() { continue; }
-                    cfg.texture.push(TextureEntry {
-                        label: map.get("Label").map(|s| s.to_string()),
-                        entry_type: map.get("Type").map(|s| s.to_string()),
-                        file_name: map.get("FileName").map(|s| s.to_string()),
-                        file_type: map.get("FileType").map(|s| s.to_string()),
-                        x: map.get("X").map(|s| s.to_string()),
-                        y: map.get("Y").map(|s| s.to_string()),
-                        z: map.get("Z").map(|s| s.to_string()),
-                        pivot: map.get("Pivot").map(|s| s.to_string()),
-                        scale: map.get("Scale").map(|s| s.to_string()),
-                        conditional: map.get("Conditional").map(|s| s.to_string()),
-                        sub_file_name: map.get("SubFileName").map(|s| s.to_string()),
-                        animation: map.get("Animation").map(|s| s.to_string()),
-                        render_texture: map.get("RenderTexture").map(|s| s.to_string()),
-                        render_rect: map.get("RenderRect").map(|s| s.to_string()),
-                        thumbnail: map.get("Thumbnail").map(|s| s.to_string()),
-                        cg_categolly: map.get("CgCategolly").map(|s| s.to_string()),
-                    });
+                    if let Some(label) = map.get("Label").map(|s| s.to_string()) {
+                        let entry = TextureEntry {
+                            entry_type: map.get("Type").map(|s| s.to_string()),
+                            file_name: map.get("FileName").map(|s| s.to_string()),
+                            file_type: map.get("FileType").map(|s| s.to_string()),
+                            x: map.get("X").map(|s| s.to_string()),
+                            y: map.get("Y").map(|s| s.to_string()),
+                            z: map.get("Z").map(|s| s.to_string()),
+                            pivot: map.get("Pivot").map(|s| s.to_string()),
+                            scale: map.get("Scale").map(|s| s.to_string()),
+                            conditional: map.get("Conditional").map(|s| s.to_string()),
+                            sub_file_name: map.get("SubFileName").map(|s| s.to_string()),
+                            animation: map.get("Animation").map(|s| s.to_string()),
+                            render_texture: map.get("RenderTexture").map(|s| s.to_string()),
+                            render_rect: map.get("RenderRect").map(|s| s.to_string()),
+                            thumbnail: map.get("Thumbnail").map(|s| s.to_string()),
+                            cg_categolly: map.get("CgCategolly").map(|s| s.to_string()),
+                        };
+                        cfg.texture.insert(label, entry);
+                    }
                 }
             }
             _ => {}
         }
     }
-    return Ok(cfg);
+    Ok(cfg)
 }

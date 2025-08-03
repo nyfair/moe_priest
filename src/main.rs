@@ -2,13 +2,13 @@
 
 mod utage4;
 
-use std::collections::BTreeMap;
-use std::fs::read_to_string;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowMode};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
+use std::collections::BTreeMap;
+use std::fs::read_to_string;
 
 static FONT: &str = "resources/font/FOT-KurokaneStd-EB.otf";
 static HEADTEXT: Color = Color::srgb(0.5, 0.8, 0.7);
@@ -61,6 +61,15 @@ fn main() {
                 }),
                 ..default()
             }
+        // ).set(
+        //     bevy::render::RenderPlugin {
+        //         render_creation: bevy::render::settings::WgpuSettings {
+        //             backends: Some(bevy::render::settings::Backends::DX12),
+        //             ..default()
+        //         }
+        //         .into(),
+        //         ..default()
+        //     }
         ),
             SpinePlugin,
             TransformInterpolationPlugin::interpolate_all(),
@@ -86,9 +95,10 @@ fn setup(
     mut commands: Commands,
     mut event: EventWriter<SceneEvent>,
 ) {
-    let vn = utage4::parse_chapter().unwrap();
-    info!("{:?}", vn.layer);
-
+    if let Ok(content) = read_to_string("assets/advscene/scenariochapter/config.chapter.json") {
+        let _vn = utage4::parse_chapter(content).unwrap();
+    }
+    
     let mut spines = BTreeMap::new();
     if let Ok(content) = read_to_string("assets/spine.txt") {
         for spine in content.lines() {
@@ -436,7 +446,7 @@ fn scroll(
         if let Some(pos) = window.cursor_position() {
             if pos.x > window.width() * 0.88 {
                 for mut scroll_position in &mut scrolled_query {
-                    scroll_position.offset_y -= ev.y * 6666. * delta_secs;
+                    scroll_position.offset_y -= ev.y * 5000. * delta_secs;
                 }
             } else {
                 for mut spine in &mut query {
