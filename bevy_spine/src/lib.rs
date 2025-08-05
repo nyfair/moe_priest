@@ -587,7 +587,6 @@ fn spine_load(
 
     spine_textures.update(
         asset_server.as_ref(),
-        atlases.as_ref(),
         &mut texture_create_events,
         &mut texture_dispose_events,
     );

@@ -5,15 +5,12 @@ use std::sync::{Arc, Mutex};
 use bevy::prelude::*;
 use rusty_spine::atlas::{AtlasFilter, AtlasWrap};
 
-use crate::Atlas;
-
 #[derive(Debug)]
 pub struct SpineTexture(pub String);
 
 #[derive(Debug)]
 struct SpineTextureInternal {
     pub path: String,
-    pub atlas_address: usize,
     pub config: SpineTextureConfig,
 }
 
@@ -38,7 +35,6 @@ pub(crate) struct SpineTextures {
 pub struct SpineTextureCreateEvent {
     pub path: String,
     pub handle: Handle<Image>,
-    pub atlas: Handle<Atlas>,
     pub config: SpineTextureConfig,
 }
 
@@ -66,7 +62,6 @@ impl SpineTextures {
         rusty_spine::extension::set_create_texture_cb(move |page, path| {
             data2.lock().unwrap().remember.push(SpineTextureInternal {
                 path: path.to_owned(),
-                atlas_address: page.atlas().c_ptr() as usize,
                 config: SpineTextureConfig {
                     //premultiplied_alpha: page.pma(),
                     premultiplied_alpha: true, // TODO
@@ -96,23 +91,18 @@ impl SpineTextures {
     pub fn update(
         &self,
         asset_server: &AssetServer,
-        atlases: &Assets<Atlas>,
         create_events: &mut EventWriter<SpineTextureCreateEvent>,
         dispose_events: &mut EventWriter<SpineTextureDisposeEvent>,
     ) {
         let mut data = self.data.lock().unwrap();
         while let Some(texture) = data.remember.pop() {
             let handle = asset_server.load(&texture.path);
-            // if none, the atlas was already deleted before getting here
-            if let Some(atlas) = find_matching_atlas(atlases, texture.atlas_address) {
-                data.handles.push((texture.path.clone(), handle.clone()));
-                create_events.write(SpineTextureCreateEvent {
-                    path: texture.path,
-                    atlas,
-                    handle,
-                    config: texture.config,
-                });
-            }
+            data.handles.push((texture.path.clone(), handle.clone()));
+            create_events.write(SpineTextureCreateEvent {
+                path: texture.path,
+                handle,
+                config: texture.config,
+            });
         }
         while let Some(texture_path) = data.forget.pop() {
             if let Some(index) = data.handles.iter().position(|i| i.0 == texture_path) {
@@ -124,13 +114,4 @@ impl SpineTextures {
             }
         }
     }
-}
-
-fn find_matching_atlas(atlases: &Assets<Atlas>, atlas_address: usize) -> Option<Handle<Atlas>> {
-    for (atlas_handle, atlas) in atlases.iter() {
-        if atlas.atlas.c_ptr() as usize == atlas_address {
-            return Some(Handle::Weak(atlas_handle));
-        }
-    }
-    None
 }

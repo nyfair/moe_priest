@@ -9,12 +9,16 @@ use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
 use std::collections::BTreeMap;
 use std::fs::read_to_string;
+use std::time::Duration;
 
-static FONT: &str = "resources/font/FOT-KurokaneStd-EB.otf";
+use crate::utage4::VNConfig;
+
+static FONT: &str = "resources/font/FOT-NewRodinProN-EB.otf";
 static HEADTEXT: Color = Color::srgb(0.5, 0.8, 0.7);
 static LISTTEXT: Color = Color::srgb(0.2, 0.8, 0.2);
 static SELECTTEXT: Color = Color::srgb(0.8, 0.8, 0.8);
 static HOVERBG: Color = Color::srgb(0.1, 0.4, 0.1);
+static VNSPEED: Duration = Duration::from_millis(100);
 
 #[derive(Debug)]
 struct Location {
@@ -23,6 +27,7 @@ struct Location {
     ext: String,
 }
 
+#[derive(Clone, Debug, PartialEq)]
 enum ListMode {
     Gallery,
     Motion,
@@ -36,6 +41,8 @@ struct Viewres {
     cur_spine: Vec<Entity>,
     spines: BTreeMap<String, Location>,
     events: BTreeMap<String, Location>,
+    cur_mode: ListMode,
+    vn: VNConfig,
 }
 
 #[derive(Component)]
@@ -46,6 +53,23 @@ struct AnimeMenu;
 
 #[derive(Component)]
 struct ModeMenu;
+
+#[derive(Component)]
+struct VNText {
+    text: String,
+    index: usize,
+    timer: Timer,
+}
+
+impl VNText {
+    fn new(text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            index: 0,
+            timer: Timer::new(VNSPEED, TimerMode::Once),
+        }
+    }
+}
 
 #[derive(Event)]
 struct SceneEvent(ListMode);
@@ -61,15 +85,6 @@ fn main() {
                 }),
                 ..default()
             }
-        // ).set(
-        //     bevy::render::RenderPlugin {
-        //         render_creation: bevy::render::settings::WgpuSettings {
-        //             backends: Some(bevy::render::settings::Backends::DX12),
-        //             ..default()
-        //         }
-        //         .into(),
-        //         ..default()
-        //     }
         ),
             SpinePlugin,
             TransformInterpolationPlugin::interpolate_all(),
@@ -85,6 +100,7 @@ fn main() {
             choose_animation,
             choose_mode,
             hide_ui,
+            vn_dialogue,
         ))
         .add_systems(FixedUpdate, (scroll, mouse_motion))
         .run();
@@ -93,12 +109,13 @@ fn main() {
 fn setup(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut event: EventWriter<SceneEvent>,
+    mut scene_event: EventWriter<SceneEvent>,
 ) {
-    if let Ok(content) = read_to_string("assets/advscene/scenariochapter/config.chapter.json") {
-        let _vn = utage4::parse_chapter(content).unwrap();
-    }
-    
+    let vn = if let Ok(content) = read_to_string("assets/advscene/scenariochapter/config.chapter.json") {
+        utage4::parse_chapter(content).unwrap_or_default()
+    } else {
+        VNConfig::default()
+    };
     let mut spines = BTreeMap::new();
     if let Ok(content) = read_to_string("assets/spine.txt") {
         for spine in content.lines() {
@@ -144,6 +161,8 @@ fn setup(
         cur_spine: vec![],
         spines,
         events,
+        cur_mode: ListMode::Gallery,
+        vn,
     });
 
     commands.spawn((
@@ -174,16 +193,16 @@ fn setup(
             ));
         }
     });
-    event.write(SceneEvent(ListMode::Gallery));
+    scene_event.write(SceneEvent(ListMode::Gallery));
 }
 
 fn list_scene(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut view_res: ResMut<Viewres>,
-    mut events: EventReader<SceneEvent>,
+    mut scene_event: EventReader<SceneEvent>,
 ) {
-    if let Some(event) = events.read().last() {
+    if let Some(event) = scene_event.read().last() {
         if let Some(entity) = view_res.scene_menu {
             commands.entity(entity).despawn();
             view_res.scene_menu = None;
@@ -398,7 +417,8 @@ fn choose_mode(
         &mut BackgroundColor,
         &ModeMenu,
     ), (Changed<Interaction>, With<Button>),>,
-    mut event: EventWriter<SceneEvent>,
+    mut view_res: ResMut<Viewres>,
+    mut scene_event: EventWriter<SceneEvent>,
 ) {
     for (interaction, text, mut bg_color, _) in &mut interaction_query {
         match *interaction {
@@ -408,7 +428,8 @@ fn choose_mode(
                     "Memory" => ListMode::Memory,
                     _ => ListMode::Gallery,
                 };
-                event.write(SceneEvent(mode));
+                view_res.cur_mode = mode.clone();
+                scene_event.write(SceneEvent(mode));
             },
             Interaction::Hovered => {
                 *bg_color = HOVERBG.into();
@@ -424,7 +445,7 @@ fn hide_ui(
     mut ui: Query<&mut Visibility>,
     button: Res<ButtonInput<MouseButton>>,
 ) {
-    if button.just_released(MouseButton::Middle) {
+    if button.just_released(MouseButton::Right) {
         for mut v in &mut ui {
             v.toggle_visible_hidden();
         }
@@ -463,12 +484,36 @@ fn mouse_motion(
     button: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
 ) {
-    if button.pressed(MouseButton::Right) {
+    if button.pressed(MouseButton::Middle) {
         let delta_secs = time.delta_secs();
         for ev in motion.read() {
             for mut spine in &mut query {
                 spine.translation.x += ev.delta.x * 6. * delta_secs;
                 spine.translation.y -= ev.delta.y * 6. * delta_secs;
+            }
+        }
+    }
+}
+
+fn vn_dialogue(
+    mut query: Query<&mut VNText>,
+    e_query: Query<Entity, With<VNText>>,
+    view_res: Res<Viewres>,
+    time: Res<Time>,
+    mut writer: TextUiWriter,
+) {
+    if view_res.cur_mode == ListMode::Memory {
+        for mut say in query.iter_mut() {
+            say.timer.tick(time.delta());
+            if say.timer.just_finished() && say.index < say.text.len() {
+                say.index += 1;
+                let displayed_text: String = say.text
+                    .chars()
+                    .take(say.index)
+                    .collect();
+                for entity in e_query.iter() {
+                    *writer.text(entity, 0)  = displayed_text.clone();
+                }
             }
         }
     }
