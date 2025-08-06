@@ -2,6 +2,7 @@
 
 mod utage4;
 
+use bevy::audio::{AudioLoader, PlaybackMode};
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowMode};
@@ -194,6 +195,15 @@ fn setup(
         }
     });
     scene_event.write(SceneEvent(ListMode::Gallery));
+    commands.spawn((
+        AudioPlayer::new(
+            asset_server.load("advscene/resources/advscene/sound/voice/ch_30005/general/basic/30005_030.m4a")
+        ),
+        PlaybackSettings {
+            mode: PlaybackMode::Despawn,
+            ..default()
+        },
+    ));
 }
 
 fn list_scene(

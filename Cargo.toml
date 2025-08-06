@@ -4,7 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = "^0.16"
+bevy = { version = "^0.16", default-features = false, features = [
+    "bevy_log",
+    "bevy_ui",
+    "bevy_winit",
+    "png",
+    "symphonia-aac",
+    "symphonia-isomp4",
+    "wav",
+] }
 bevy_spine = { path = "bevy_spine" }
 bevy_transform_interpolation = "^0.2"
 serde = { version = "^1.0", features = ["derive"] }
