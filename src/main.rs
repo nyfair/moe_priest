@@ -2,7 +2,7 @@
 
 mod utage4;
 
-use bevy::audio::{AudioLoader, PlaybackMode};
+use bevy::audio::PlaybackMode;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::window::{PrimaryWindow, WindowMode};
@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use crate::utage4::VNConfig;
 
-static FONT: &str = "resources/font/FOT-NewRodinProN-EB.otf";
+static FONT: &str = "FOT-NewRodinProN-EB.otf";
 static HEADTEXT: Color = Color::srgb(0.5, 0.8, 0.7);
 static LISTTEXT: Color = Color::srgb(0.2, 0.8, 0.2);
 static SELECTTEXT: Color = Color::srgb(0.8, 0.8, 0.8);
@@ -138,7 +138,7 @@ fn setup(
         }
     }
     let mut events = BTreeMap::new();
-    if let Ok(content) = read_to_string("assets/event.txt") {
+    if let Ok(content) = read_to_string("assets/memory.txt") {
         for event in content.lines() {
             if let (Some(l), Some(r)) = (event.rfind('/'), event.find('.')) {
                 if l < r {

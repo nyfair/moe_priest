@@ -9,6 +9,6 @@ with open('assets/spine.txt', 'w') as fd:
     fd.writelines(f'{i}.{e(i)}\n')
 
 s = glob.glob('**/*.book.json', root_dir = 'assets', recursive = True)
-with open('assets/event.txt', 'w') as fd:
+with open('assets/memory.txt', 'w') as fd:
   for i in s:
     fd.writelines(f'{i.replace('\\', '/')}\n')
