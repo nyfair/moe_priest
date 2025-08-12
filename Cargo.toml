@@ -12,6 +12,7 @@ bevy = { version = "0.16", default-features = false, features = [
     "symphonia-aac",
     "symphonia-isomp4",
     "wav",
+    "wayland",
 ] }
 bevy_spine = { path = "bevy_spine" }
 bevy_transform_interpolation = "0.2"

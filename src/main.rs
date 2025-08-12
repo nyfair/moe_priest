@@ -113,15 +113,16 @@ fn setup(
     mut scene_event: EventWriter<SceneEvent>,
 ) {
     let vn = if let Ok(content) = read_to_string("assets/advscene/scenariochapter/config.chapter.json") {
-        utage4::parse_chapter(content).unwrap_or_default()
+        utage4::parse_chapter(content)
     } else {
         VNConfig::default()
     };
+
     let mut spines = BTreeMap::new();
     if let Ok(content) = read_to_string("assets/spine.txt") {
         for spine in content.lines() {
-            if let (Some(l), Some(r)) = (spine.rfind('/'), spine.rfind('.')) {
-                if l < r {
+            if let (Some(l), Some(r)) = (spine.rfind('/'), spine.rfind('.'))
+                && l < r {
                     let path = spine[..l].to_string();
                     if let Some(rr) = path.rfind('/') {
                         let key = path[rr+1..].to_string();
@@ -134,14 +135,13 @@ fn setup(
                         });
                     }
                 }
-            }
         }
     }
     let mut events = BTreeMap::new();
     if let Ok(content) = read_to_string("assets/memory.txt") {
         for event in content.lines() {
-            if let (Some(l), Some(r)) = (event.rfind('/'), event.find('.')) {
-                if l < r {
+            if let (Some(l), Some(r)) = (event.rfind('/'), event.find('.'))
+                && l < r {
                     let path = event[..l].to_string();
                     let name = event[l+1..r].to_string();
                     let ext = event[r+1..].to_string();
@@ -151,7 +151,6 @@ fn setup(
                         ext,
                     });
                 }
-            }
         }
     }
 

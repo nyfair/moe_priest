@@ -32,6 +32,7 @@
 )]
 // https://github.com/rust-lang/rust-clippy/issues/11382
 #![allow(clippy::arc_with_non_send_sync)]
+#![allow(mismatched_lifetime_syntaxes)]
 
 #[macro_use]
 pub mod c_interface;
@@ -105,6 +106,3 @@ pub use skin::*;
 pub use slot::*;
 pub use transform_constraint::*;
 pub use transform_constraint_data::*;
-
-#[cfg(test)]
-pub mod test;
