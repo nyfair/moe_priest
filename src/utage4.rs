@@ -162,13 +162,19 @@ pub fn parse_chapter(content: String) -> VNConfig {
             };
 
             match setting.name.as_str() {
-                s if s.contains("cfg_character.xlsx:Character") => {
+                s if s.contains("xlsx:Character") => {
                     for (index, row) in setting.rows.iter().enumerate() {
-                        if index == setting.header_row || row.is_comment_out == 1 { continue; }
+                        if index == setting.header_row || row.is_comment_out == 1 {
+                            continue;
+                        }
                         let map = row_to_map(row, headers);
-                        if map.is_empty() { continue; }
+                        if map.is_empty() {
+                            continue;
+                        }
                         if let Some(name) = map.get("CharacterName").map(|s| s.to_string()) {
-                            if name.is_empty() { continue; }
+                            if name.is_empty() {
+                                continue;
+                            }
                             let entry = CharacterEntry {
                                 label: if row.strings.len() > 2 { Some(row.strings[2].clone()) } else { None },
                                 name_text: map.get("NameText").map(|s| s.to_string()),
@@ -196,13 +202,19 @@ pub fn parse_chapter(content: String) -> VNConfig {
                     }
                 }
 
-                s if s.contains("cfg_layer.xlsx:Layer") => {
+                s if s.contains("xlsx:Layer") => {
                     for (index, row) in setting.rows.iter().enumerate() {
-                        if index == setting.header_row || row.is_comment_out == 1 { continue; }
+                        if index == setting.header_row || row.is_comment_out == 1 {
+                            continue;
+                        }
                         let map = row_to_map(row, headers);
-                        if map.is_empty() { continue; }
+                        if map.is_empty() {
+                            continue;
+                        }
                         if let Some(name) = map.get("LayerName").map(|s| s.to_string()) {
-                            if name.is_empty() { continue; }
+                            if name.is_empty() {
+                                continue;
+                            }
                             let entry = LayerEntry {
                                 entry_type: map.get("Type").map(|s| s.to_string()),
                                 x: map.get("X").map(|s| s.to_string()),
@@ -226,13 +238,19 @@ pub fn parse_chapter(content: String) -> VNConfig {
                     }
                 }
 
-                s if s.contains("cfg_param.xlsx:Param") => {
+                s if s.contains("xlsx:Param") => {
                     for (index, row) in setting.rows.iter().enumerate() {
-                        if index == setting.header_row || row.is_comment_out == 1 { continue; }
+                        if index == setting.header_row || row.is_comment_out == 1 {
+                            continue;
+                        }
                         let map = row_to_map(row, headers);
-                        if map.is_empty() { continue; }
+                        if map.is_empty() {
+                            continue;
+                        }
                         if let Some(label) = map.get("Label").map(|s| s.to_string()) {
-                            if label.is_empty() { continue; }
+                            if label.is_empty() {
+                                continue;
+                            }
                             let entry = ParamEntry {
                                 entry_type: map.get("Type").map(|s| s.to_string()),
                                 value: map.get("Value").map(|s| s.to_string()),
@@ -243,13 +261,19 @@ pub fn parse_chapter(content: String) -> VNConfig {
                     }
                 }
 
-                s if s.contains("cfg_sound.xlsx:Sound") => {
+                s if s.contains("xlsx:Sound") => {
                     for (index, row) in setting.rows.iter().enumerate() {
-                        if index == setting.header_row || row.is_comment_out == 1 { continue; }
+                        if index == setting.header_row || row.is_comment_out == 1 {
+                            continue;
+                        }
                         let map = row_to_map(row, headers);
-                        if map.is_empty() { continue; }
+                        if map.is_empty() {
+                            continue;
+                        }
                         if let Some(label) = map.get("Label").map(|s| s.to_string()) {
-                            if label.is_empty() { continue; }
+                            if label.is_empty() {
+                                continue;
+                            }
                             let entry = SoundEntry {
                                 title: map.get("Title").map(|s| s.to_string()),
                                 entry_type: map.get("Type").map(|s| s.to_string()),
@@ -262,13 +286,19 @@ pub fn parse_chapter(content: String) -> VNConfig {
                     }
                 }
 
-                s if s.contains("cfg_texture.xlsx:Texture") => {
+                s if s.contains("xlsx:Texture") => {
                     for (index, row) in setting.rows.iter().enumerate() {
-                        if index == setting.header_row || row.is_comment_out == 1 { continue; }
+                        if index == setting.header_row || row.is_comment_out == 1 {
+                            continue;
+                        }
                         let map = row_to_map(row, headers);
-                        if map.is_empty() { continue; }
+                        if map.is_empty() {
+                            continue;
+                        }
                         if let Some(label) = map.get("Label").map(|s| s.to_string()) {
-                            if label.is_empty() { continue; }
+                            if label.is_empty() {
+                                continue;
+                            }
                             let entry = TextureEntry {
                                 entry_type: map.get("Type").map(|s| s.to_string()),
                                 file_name: map.get("FileName").map(|s| s.to_string()),
@@ -308,10 +338,14 @@ pub fn parse_book(content: String) -> Vec<Node> {
             };
 
             for (index, row) in grid.rows.iter().enumerate() {
-                if index == grid.header_row || row.is_comment_out == 1 { continue; }
+                if index == grid.header_row || row.is_comment_out == 1 {
+                    continue;
+                }
                 let map = row_to_map(row, headers);
-                if map.is_empty() { continue; }
-                let command = Node {
+                if map.is_empty() {
+                    continue;
+                }
+                let node = Node {
                     command: map.get("Command").map(|s| s.to_string()),
                     arg1: map.get("Arg1").map(|s| s.to_string()),
                     arg2: map.get("Arg2").map(|s| s.to_string()),
@@ -325,7 +359,7 @@ pub fn parse_book(content: String) -> Vec<Node> {
                     voice: map.get("Voice").map(|s| s.to_string()),
                     window_type: map.get("WindowType").map(|s| s.to_string()),
                 };
-                nodes.push(command);
+                nodes.push(node);
             }
         }
     }
