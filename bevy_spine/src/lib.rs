@@ -9,15 +9,12 @@ use std::{
 };
 
 use bevy::{
-    asset::load_internal_binary_asset,
+    asset::{load_internal_binary_asset, RenderAssetUsages},
     image::{ImageAddressMode, ImageFilterMode, ImageSampler, ImageSamplerDescriptor},
+    mesh::{Indices, MeshVertexAttribute},
     prelude::*,
-    render::{
-        mesh::{Indices, MeshVertexAttribute},
-        render_asset::RenderAssetUsages,
-        render_resource::{PrimitiveTopology, VertexFormat},
-    },
-    sprite::Material2dPlugin,
+    render::render_resource::{PrimitiveTopology, VertexFormat},
+    sprite_render::Material2dPlugin,
 };
 use materials::{
     SpineAdditiveMaterial, SpineAdditivePmaMaterial, SpineMaterialInfo, SpineMultiplyMaterial,
@@ -37,7 +34,7 @@ use crate::{
     rusty_spine::{
         controller::SkeletonControllerSettings, draw::CullDirection, AnimationStateData, BoneHandle,
     },
-    textures::{SpineTexture, SpineTextureCreateEvent, SpineTextureDisposeEvent, SpineTextures},
+    textures::{SpineTexture, SpineTextureCreateMsg, SpineTextureDisposeMsg, SpineTextures},
 };
 
 pub use crate::{assets::*, crossfades::Crossfades, entity_sync::*, handle::*, rusty_spine::Color};
@@ -57,10 +54,10 @@ pub enum SpineSystem {
     Spawn,
     /// An [`apply_deferred`] to load the spine helper entities this frame.
     SpawnFlush,
-    /// Sends [`SpineReadyEvent`] after [`SpineSystem::SpawnFlush`], indicating [`Spine`] components
+    /// Sends [`SpineReadyMsg`] after [`SpineSystem::SpawnFlush`], indicating [`Spine`] components
     /// on newly spawned [`SpineBundle`]s can now be interacted with.
     Ready,
-    /// Advances all animations and processes Spine events (see [`SpineEvent`]).
+    /// Advances all animations and processes Spine events (see [`SpineMsg`]).
     UpdateAnimation,
     /// Updates all Spine meshes.
     UpdateMeshes,
@@ -123,11 +120,11 @@ impl Plugin for SpinePlugin {
             SpineMaterialPlugin::<SpineScreenPmaMaterial>::default(),
         ))
         .add_plugins(SpineSyncPlugin::first())
-        .init_resource::<SpineEventQueue>()
+        .init_resource::<SpineMsgQueue>()
         .insert_resource(SpineTextures::init())
-        .insert_resource(SpineReadyEvents::default())
-        .add_event::<SpineTextureCreateEvent>()
-        .add_event::<SpineTextureDisposeEvent>()
+        .insert_resource(SpineReadyMsgs::default())
+        .add_message::<SpineTextureCreateMsg>()
+        .add_message::<SpineTextureDisposeMsg>()
         .init_asset::<Atlas>()
         .init_asset::<SkeletonJson>()
         .init_asset::<SkeletonBinary>()
@@ -135,8 +132,8 @@ impl Plugin for SpinePlugin {
         .init_asset_loader::<AtlasLoader>()
         .init_asset_loader::<SkeletonJsonLoader>()
         .init_asset_loader::<SkeletonBinaryLoader>()
-        .add_event::<SpineReadyEvent>()
-        .add_event::<SpineEvent>()
+        .add_message::<SpineReadyMsg>()
+        .add_message::<SpineMsg>()
         .add_systems(
             Update,
             (
@@ -177,7 +174,7 @@ impl Plugin for SpinePlugin {
 }
 
 #[derive(Resource, Default)]
-struct SpineEventQueue(Arc<Mutex<VecDeque<SpineEvent>>>);
+struct SpineMsgQueue(Arc<Mutex<VecDeque<SpineMsg>>>);
 
 /// A live Spine [`SkeletonController`] [`Component`], ready to be manipulated.
 ///
@@ -371,7 +368,7 @@ impl Default for SpineSettings {
 /// It is possible to spawn a Spine skeleton and initialize it in the same frame. To do so, ensure
 /// that the spawning system occurs before [`SpineSystem::Spawn`] and the initializing system is in
 /// the [`SpineSet::OnReady`] set (assuming the [`SkeletonData`] has already been loaded). Listen
-/// for [`SpineReadyEvent`] to get newly loaded skeletons.
+/// for [`SpineReadyMsg`] to get newly loaded skeletons.
 ///
 /// ```
 /// use bevy::prelude::*;
@@ -412,7 +409,7 @@ impl Default for SpineSettings {
 /// }
 ///
 /// fn init_spine(
-///     mut spine_ready_events: EventReader<SpineReadyEvent>,
+///     mut spine_ready_events: MessageReader<SpineReadyMsg>,
 ///     mut spine_query: Query<&mut Spine, With<MySpine>>
 /// ) {
 ///     for spine_ready_event in spine_ready_events.read() {
@@ -436,13 +433,13 @@ pub struct SpineBundle {
     pub view_visibility: ViewVisibility,
 }
 
-/// An [`Event`] which is sent once a [`SpineLoader`] has fully loaded a skeleton and attached the
+/// An [`Message`] which is sent once a [`SpineLoader`] has fully loaded a skeleton and attached the
 /// [`Spine`] component.
 ///
 /// For convenience, systems receiving this event can be added to the [`SpineSet::OnReady`] set to
 /// receive this after events are sent, but before the first [`SkeletonController`] update.
-#[derive(Debug, Clone, Event)]
-pub struct SpineReadyEvent {
+#[derive(Debug, Clone, Message)]
+pub struct SpineReadyMsg {
     /// The entity containing the [`Spine`] component.
     pub entity: Entity,
     /// A list of all bones (if spawned, see [`SpineBone`]).
@@ -458,20 +455,20 @@ pub struct SpineReadyEvent {
 /// # use bevy_spine::prelude::*;
 /// // bevy system
 /// fn on_spine_event(
-///     mut spine_events: EventReader<SpineEvent>,
+///     mut spine_events: MessageReader<SpineMsg>,
 ///     mut commands: Commands,
 ///     asset_server: Res<AssetServer>,
 /// ) {
 ///     for event in spine_events.read() {
-///         if let SpineEvent::Event { name, entity, .. } = event {
+///         if let SpineMsg::Event { name, entity, .. } = event {
 ///             println!("spine event fired: {}", name);
 ///             println!("from entity: {:?}", entity);
 ///         }
 ///     }
 /// }
 /// ```
-#[derive(Debug, Clone, Event)]
-pub enum SpineEvent {
+#[derive(Debug, Clone, Message)]
+pub enum SpineMsg {
     Start {
         entity: Entity,
         animation: String,
@@ -505,13 +502,13 @@ pub enum SpineEvent {
 
 /// Queued ready events, to be sent after [`SpineSystem::SpawnFlush`].
 #[derive(Default, Resource)]
-struct SpineReadyEvents(Vec<SpineReadyEvent>);
+struct SpineReadyMsgs(Vec<SpineReadyMsg>);
 
 #[allow(clippy::too_many_arguments)]
 fn spine_load(
     mut skeleton_data_assets: ResMut<Assets<SkeletonData>>,
-    mut texture_create_events: EventWriter<SpineTextureCreateEvent>,
-    mut texture_dispose_events: EventWriter<SpineTextureDisposeEvent>,
+    mut texture_create_events: MessageWriter<SpineTextureCreateMsg>,
+    mut texture_dispose_events: MessageWriter<SpineTextureDisposeMsg>,
     atlases: Res<Assets<Atlas>>,
     jsons: Res<Assets<SkeletonJson>>,
     binaries: Res<Assets<SkeletonBinary>>,
@@ -602,9 +599,9 @@ fn spine_spawn(
     )>,
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut ready_events: ResMut<SpineReadyEvents>,
+    mut ready_events: ResMut<SpineReadyMsgs>,
     mut skeleton_data_assets: ResMut<Assets<SkeletonData>>,
-    spine_event_queue: Res<SpineEventQueue>,
+    spine_event_queue: Res<SpineMsgQueue>,
 ) {
     for (mut spine_loader, spine_entity, data_handle, crossfades) in skeleton_query.iter_mut() {
         if let SpineLoader::Loading { with_children } = spine_loader.as_ref() {
@@ -635,35 +632,35 @@ fn spine_spawn(
                         .set_listener(move |_, animation_event| match animation_event {
                             AnimationEvent::Start { track_entry } => {
                                 let mut events = events.lock().unwrap();
-                                events.push_back(SpineEvent::Start {
+                                events.push_back(SpineMsg::Start {
                                     entity: spine_entity,
                                     animation: track_entry.animation().name().to_owned(),
                                 });
                             }
                             AnimationEvent::Interrupt { track_entry } => {
                                 let mut events = events.lock().unwrap();
-                                events.push_back(SpineEvent::Interrupt {
+                                events.push_back(SpineMsg::Interrupt {
                                     entity: spine_entity,
                                     animation: track_entry.animation().name().to_owned(),
                                 });
                             }
                             AnimationEvent::End { track_entry } => {
                                 let mut events = events.lock().unwrap();
-                                events.push_back(SpineEvent::End {
+                                events.push_back(SpineMsg::End {
                                     entity: spine_entity,
                                     animation: track_entry.animation().name().to_owned(),
                                 });
                             }
                             AnimationEvent::Complete { track_entry } => {
                                 let mut events = events.lock().unwrap();
-                                events.push_back(SpineEvent::Complete {
+                                events.push_back(SpineMsg::Complete {
                                     entity: spine_entity,
                                     animation: track_entry.animation().name().to_owned(),
                                 });
                             }
                             AnimationEvent::Dispose { .. } => {
                                 let mut events = events.lock().unwrap();
-                                events.push_back(SpineEvent::Dispose {
+                                events.push_back(SpineMsg::Dispose {
                                     entity: spine_entity,
                                 });
                             }
@@ -678,7 +675,7 @@ fn spine_spawn(
                                 ..
                             } => {
                                 let mut events = events.lock().unwrap();
-                                events.push_back(SpineEvent::Event {
+                                events.push_back(SpineMsg::Event {
                                     entity: spine_entity,
                                     name: name.to_owned(),
                                     int,
@@ -748,7 +745,7 @@ fn spine_spawn(
                             .insert(Spine(controller));
                     }
                     *spine_loader = SpineLoader::Ready;
-                    ready_events.0.push(SpineReadyEvent {
+                    ready_events.0.push(SpineReadyMsg {
                         entity: spine_entity,
                         bones,
                     });
@@ -814,8 +811,8 @@ fn spawn_bones(
 }
 
 fn spine_ready(
-    mut ready_events: ResMut<SpineReadyEvents>,
-    mut ready_writer: EventWriter<SpineReadyEvent>,
+    mut ready_events: ResMut<SpineReadyMsgs>,
+    mut ready_writer: MessageWriter<SpineReadyMsg>,
 ) {
     for event in take(&mut ready_events.0).into_iter() {
         ready_writer.write(event);
@@ -824,9 +821,9 @@ fn spine_ready(
 
 fn spine_update_animation(
     mut spine_query: Query<(Entity, &mut Spine)>,
-    mut spine_events: EventWriter<SpineEvent>,
+    mut spine_events: MessageWriter<SpineMsg>,
     time: Res<Time>,
-    spine_event_queue: Res<SpineEventQueue>,
+    spine_event_queue: Res<SpineMsgQueue>,
 ) {
     for (_, mut spine) in spine_query.iter_mut() {
         spine.update(time.delta_secs());
@@ -1052,7 +1049,7 @@ struct FixSpineTextures {
 /// Adjusts Spine textures to render properly.
 fn adjust_spine_textures(
     mut local: Local<FixSpineTextures>,
-    mut spine_texture_create_events: EventReader<SpineTextureCreateEvent>,
+    mut spine_texture_create_events: MessageReader<SpineTextureCreateMsg>,
     mut images: ResMut<Assets<Image>>,
 ) {
     for spine_texture_create_event in spine_texture_create_events.read() {
@@ -1145,8 +1142,8 @@ pub mod textures;
 pub mod prelude {
     pub use crate::{
         Crossfades, SkeletonController, SkeletonData, SkeletonDataHandle, Spine, SpineBone,
-        SpineBundle, SpineEvent, SpineLoader, SpineMesh, SpineMeshState, SpinePlugin,
-        SpineReadyEvent, SpineSet, SpineSettings, SpineSync, SpineSyncSet, SpineSyncSystem,
+        SpineBundle, SpineMsg, SpineLoader, SpineMesh, SpineMeshState, SpinePlugin,
+        SpineReadyMsg, SpineSet, SpineSettings, SpineSync, SpineSyncSet, SpineSyncSystem,
         SpineSystem,
     };
     pub use rusty_spine::{BoneHandle, SlotHandle};

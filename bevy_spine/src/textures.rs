@@ -28,21 +28,21 @@ pub(crate) struct SpineTextures {
     data: Arc<Mutex<SpineTexturesData>>,
 }
 
-/// An [`Event`] fired for each texture loaded by Spine.
+/// An [`Message`] fired for each texture loaded by Spine.
 ///
 /// Sent in [`SpineSystem::Load`](`crate::SpineSystem::Load`).
-#[derive(Debug, Clone, Event)]
-pub struct SpineTextureCreateEvent {
+#[derive(Debug, Clone, Message)]
+pub struct SpineTextureCreateMsg {
     pub path: String,
     pub handle: Handle<Image>,
     pub config: SpineTextureConfig,
 }
 
-/// An [`Event`] fired for each texture disposed, after [`SpineTextureCreateEvent`].
+/// An [`Message`] fired for each texture disposed, after [`SpineTextureCreateEvent`].
 ///
 /// Sent in [`SpineSystem::Load`](`crate::SpineSystem::Load`).
-#[derive(Debug, Clone, Event)]
-pub struct SpineTextureDisposeEvent {
+#[derive(Debug, Clone, Message)]
+pub struct SpineTextureDisposeMsg {
     pub path: String,
     pub handle: Handle<Image>,
 }
@@ -91,14 +91,14 @@ impl SpineTextures {
     pub fn update(
         &self,
         asset_server: &AssetServer,
-        create_events: &mut EventWriter<SpineTextureCreateEvent>,
-        dispose_events: &mut EventWriter<SpineTextureDisposeEvent>,
+        create_events: &mut MessageWriter<SpineTextureCreateMsg>,
+        dispose_events: &mut MessageWriter<SpineTextureDisposeMsg>,
     ) {
         let mut data = self.data.lock().unwrap();
         while let Some(texture) = data.remember.pop() {
             let handle = asset_server.load(&texture.path);
             data.handles.push((texture.path.clone(), handle.clone()));
-            create_events.write(SpineTextureCreateEvent {
+            create_events.write(SpineTextureCreateMsg {
                 path: texture.path,
                 handle,
                 config: texture.config,
@@ -106,7 +106,7 @@ impl SpineTextures {
         }
         while let Some(texture_path) = data.forget.pop() {
             if let Some(index) = data.handles.iter().position(|i| i.0 == texture_path) {
-                dispose_events.write(SpineTextureDisposeEvent {
+                dispose_events.write(SpineTextureDisposeMsg {
                     path: texture_path,
                     handle: data.handles[index].1.clone(),
                 });

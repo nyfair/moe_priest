@@ -5,18 +5,17 @@
 use std::marker::PhantomData;
 
 use bevy::{
-    asset::{weak_handle, Asset},
+    asset::{uuid_handle, Asset},
     ecs::system::{StaticSystemParam, SystemParam},
+    mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
     prelude::*,
     reflect::TypePath,
-    render::{
-        mesh::{MeshVertexAttribute, MeshVertexBufferLayoutRef},
-        render_resource::{
-            AsBindGroup, BlendComponent, BlendFactor, BlendOperation, BlendState,
-            RenderPipelineDescriptor, ShaderRef, SpecializedMeshPipelineError, VertexFormat,
-        },
+    render::render_resource::{
+        AsBindGroup, BlendComponent, BlendFactor, BlendOperation, BlendState,
+        RenderPipelineDescriptor, SpecializedMeshPipelineError, VertexFormat,
     },
-    sprite::{AlphaMode2d, Material2d, Material2dKey},
+    shader::ShaderRef,
+    sprite_render::{AlphaMode2d, Material2d, Material2dKey},
 };
 use rusty_spine::BlendMode;
 
@@ -126,7 +125,7 @@ pub const DARK_COLOR_ATTRIBUTE: MeshVertexAttribute = MeshVertexAttribute::new(
     VertexFormat::Float32x4,
 );
 
-pub const SHADER_HANDLE: Handle<Shader> = weak_handle!("00000000-0000-0000-93e0-1b9409bb3c11");
+pub const SHADER_HANDLE: Handle<Shader> = uuid_handle!("00000000-0000-0000-93e0-1b9409bb3c11");
 
 /// A [`SystemParam`] to query [`SpineSettings`].
 ///

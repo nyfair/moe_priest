@@ -8,8 +8,8 @@ repository = "https://github.com/jabuwu/rusty_spine"
 readme = "readme.md"
 
 [dependencies]
-libc = { version = "0.2", optional = true }
-mint = { version = "0.5", optional = true }
+libc = { version = "0", optional = true }
+mint = { version = "0", optional = true }
 
 [features]
 default = [ "draw_functions", "mint" ]

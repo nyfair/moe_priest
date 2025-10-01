@@ -72,8 +72,8 @@ impl VNText {
     }
 }
 
-#[derive(Event)]
-struct SceneEvent(ListMode);
+#[derive(Message)]
+struct SceneMsg(ListMode);
 
 fn main() {
     App::new()
@@ -92,7 +92,7 @@ fn main() {
         ))
         .insert_resource(ClearColor(Color::NONE))
         .insert_resource(Time::<Fixed>::from_hz(5.))
-        .add_event::<SceneEvent>()
+        .add_message::<SceneMsg>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
             list_scene,
@@ -110,7 +110,7 @@ fn main() {
 fn setup(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut scene_event: EventWriter<SceneEvent>,
+    mut scene_msg: MessageWriter<SceneMsg>,
 ) {
     let vn = if let Ok(content) = read_to_string("assets/advscene/scenariochapter/config.chapter.json") {
         utage4::parse_chapter(content)
@@ -193,7 +193,7 @@ fn setup(
             ));
         }
     });
-    scene_event.write(SceneEvent(ListMode::Gallery));
+    scene_msg.write(SceneMsg(ListMode::Gallery));
     commands.spawn((
         AudioPlayer::new(
             asset_server.load("advscene/resources/advscene/sound/voice/ch_30005/general/basic/30005_030.m4a")
@@ -209,9 +209,9 @@ fn list_scene(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut view_res: ResMut<Viewres>,
-    mut scene_event: EventReader<SceneEvent>,
+    mut scene_msg: MessageReader<SceneMsg>,
 ) {
-    if let Some(event) = scene_event.read().last() {
+    if let Some(event) = scene_msg.read().last() {
         if let Some(entity) = view_res.scene_menu {
             commands.entity(entity).despawn();
             view_res.scene_menu = None;
@@ -236,7 +236,7 @@ fn list_scene(
                     ..default()
                 },
                 TextColor(HEADTEXT),
-                TextLayout::new_with_justify(JustifyText::Right),
+                TextLayout::new_with_justify(Justify::Right),
             ));
             parent.spawn((
                 Node {
@@ -264,7 +264,7 @@ fn list_scene(
                         },
                         TextColor(LISTTEXT),
                         BackgroundColor(Color::NONE),
-                        TextLayout::new_with_justify(JustifyText::Right),
+                        TextLayout::new_with_justify(Justify::Right),
                     ));
                 }
             });
@@ -328,7 +328,7 @@ fn choose_scene(
 
 fn spine_spawn(
     asset_server: Res<AssetServer>,
-    mut spine_ready_event: EventReader<SpineReadyEvent>,
+    mut spine_ready_event: MessageReader<SpineReadyMsg>,
     mut spine_query: Query<&mut Spine>,
     mut commands: Commands,
     mut view_res: ResMut<Viewres>,
@@ -427,7 +427,7 @@ fn choose_mode(
         &ModeMenu,
     ), (Changed<Interaction>, With<Button>),>,
     mut view_res: ResMut<Viewres>,
-    mut scene_event: EventWriter<SceneEvent>,
+    mut scene_msg: MessageWriter<SceneMsg>,
 ) {
     for (interaction, text, mut bg_color, _) in &mut interaction_query {
         match *interaction {
@@ -438,7 +438,7 @@ fn choose_mode(
                     _ => ListMode::Gallery,
                 };
                 view_res.cur_mode = mode.clone();
-                scene_event.write(SceneEvent(mode));
+                scene_msg.write(SceneMsg(mode));
             },
             Interaction::Hovered => {
                 *bg_color = HOVERBG.into();
@@ -463,7 +463,7 @@ fn hide_ui(
 
 fn scroll(
     mut query: Query<&mut Transform, With<Spine>>,
-    mut scroll: EventReader<MouseWheel>,
+    mut scroll: MessageReader<MouseWheel>,
     mut scrolled_query: Query<&mut ScrollPosition>,
     window: Single<&Window, With<PrimaryWindow>>,
     time: Res<Time>,
@@ -476,7 +476,7 @@ fn scroll(
         if let Some(pos) = window.cursor_position() {
             if pos.x > window.width() * 0.88 {
                 for mut scroll_position in &mut scrolled_query {
-                    scroll_position.offset_y -= ev.y * 5000. * delta_secs;
+                    scroll_position.y -= ev.y * 5000. * delta_secs;
                 }
             } else {
                 for mut spine in &mut query {
@@ -489,7 +489,7 @@ fn scroll(
 
 fn mouse_motion(
     mut query: Query<&mut Transform, With<Spine>>,
-    mut motion: EventReader<MouseMotion>,
+    mut motion: MessageReader<MouseMotion>,
     button: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
 ) {
