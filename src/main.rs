@@ -5,6 +5,7 @@ mod utage4;
 use bevy::audio::PlaybackMode;
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
+use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar, ScrollbarPlugin};
 use bevy::window::{PrimaryWindow, WindowMode};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
@@ -87,6 +88,7 @@ fn main() {
                 ..default()
             }
         ),
+            ScrollbarPlugin,
             SpinePlugin,
             TransformInterpolationPlugin::interpolate_all(),
         ))
@@ -238,35 +240,61 @@ fn list_scene(
                 TextColor(HEADTEXT),
                 TextLayout::new_with_justify(Justify::Right),
             ));
-            parent.spawn((
-                Node {
-                    align_items: AlignItems::End,
-                    flex_direction: FlexDirection::Column,
-                    overflow: Overflow::scroll_y(),
-                    ..default()
-                },
-            )).with_children(|parent| {
-                let (items, scene_filter):
-                (&BTreeMap<_, _>, fn(&&String) -> bool) = match event.0 {
-                    ListMode::Memory => (&view_res.events, |_| true),
-                    ListMode::Gallery => (&view_res.spines, |x| x.starts_with("r18")),
-                    ListMode::Motion => (&view_res.spines, |x| !x.starts_with("r18")),
-                };
-                for bundle_name in items.keys().filter(scene_filter) {
-                    parent.spawn((
-                        Button,
-                        Text::new(bundle_name),
-                        SceneMenu,
-                        TextFont {
-                            font: asset_server.load(FONT),
-                            font_size: 20.,
+            parent.spawn(Node {
+                display: Display::Grid,
+                grid_template_columns: vec![RepeatedGridTrack::flex(1, 1.), RepeatedGridTrack::auto(1)],
+                grid_template_rows: vec![RepeatedGridTrack::flex(1, 1.), RepeatedGridTrack::auto(1)],
+                ..default()
+            }).with_children(|parent| {
+                let scrollable = parent.spawn((
+                    Node {
+                        align_items: AlignItems::End,
+                        flex_direction: FlexDirection::Column,
+                        overflow: Overflow::scroll_y(),
+                        ..default()
+                    },
+                )).with_children(|parent| {
+                    let (items, scene_filter):
+                    (&BTreeMap<_, _>, fn(&&String) -> bool) = match event.0 {
+                        ListMode::Memory => (&view_res.events, |_| true),
+                        ListMode::Gallery => (&view_res.spines, |x| x.starts_with("r18")),
+                        ListMode::Motion => (&view_res.spines, |x| !x.starts_with("r18")),
+                    };
+                    for bundle_name in items.keys().filter(scene_filter) {
+                        parent.spawn((
+                            Button,
+                            Text::new(bundle_name),
+                            SceneMenu,
+                            TextFont {
+                                font: asset_server.load(FONT),
+                                font_size: 20.,
+                                ..default()
+                            },
+                            TextColor(LISTTEXT),
+                            BackgroundColor(Color::NONE),
+                            TextLayout::new_with_justify(Justify::Right),
+                        ));
+                    }
+                }).id();
+                parent.spawn((
+                    Node {
+                        min_width: px(12),
+                        ..default()
+                    },
+                    Scrollbar {
+                        orientation: ControlOrientation::Vertical,
+                        target: scrollable,
+                        min_thumb_length: 48.,
+                    },
+                    Children::spawn(Spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
                             ..default()
                         },
-                        TextColor(LISTTEXT),
-                        BackgroundColor(Color::NONE),
-                        TextLayout::new_with_justify(Justify::Right),
-                    ));
-                }
+                        BackgroundColor(HOVERBG),
+                        CoreScrollbarThumb,
+                    ))),
+                ));
             });
         }).id();
         view_res.scene_menu = Some(menu);
@@ -328,18 +356,18 @@ fn choose_scene(
 
 fn spine_spawn(
     asset_server: Res<AssetServer>,
-    mut spine_ready_event: MessageReader<SpineReadyMsg>,
+    mut spine_ready_msg: MessageReader<SpineReadyMsg>,
     mut spine_query: Query<&mut Spine>,
     mut commands: Commands,
     mut view_res: ResMut<Viewres>,
 ) {
-    for event in spine_ready_event.read() {
+    for msg in spine_ready_msg.read() {
         if let Some(entity) = view_res.anime_menu {
             commands.entity(entity).despawn();
             view_res.anime_menu = None;
         }
         let mut animation_list = Vec::new();
-        if let Ok(mut spine) = spine_query.get_mut(event.entity) {
+        if let Ok(mut spine) = spine_query.get_mut(msg.entity) {
             let Spine(SkeletonController {
                 animation_state,
                 ..
@@ -464,7 +492,8 @@ fn hide_ui(
 fn scroll(
     mut query: Query<&mut Transform, With<Spine>>,
     mut scroll: MessageReader<MouseWheel>,
-    mut scrolled_query: Query<&mut ScrollPosition>,
+    scrollbar_query: Query<&Scrollbar>,
+    mut scrolled_query: Query<(&mut ScrollPosition, &ComputedNode), Without<Scrollbar>>,
     window: Single<&Window, With<PrimaryWindow>>,
     time: Res<Time>,
 ) {
@@ -475,8 +504,14 @@ fn scroll(
         let delta_secs = time.delta_secs();
         if let Some(pos) = window.cursor_position() {
             if pos.x > window.width() * 0.88 {
-                for mut scroll_position in &mut scrolled_query {
-                    scroll_position.y -= ev.y * 5000. * delta_secs;
+                for scrollbar in scrollbar_query {
+                    if let Ok((mut scroll_pos, scroll_content)) = scrolled_query.get_mut(scrollbar.target) {
+                        let visible_size = scroll_content.size() * scroll_content.inverse_scale_factor;
+                        let content_size = scroll_content.content_size() * scroll_content.inverse_scale_factor;
+                        let range = (content_size.y - visible_size.y).max(0.);
+                        scroll_pos.y -= ev.y * 5000. * delta_secs;
+                        scroll_pos.y = scroll_pos.y.clamp(0., range);
+                    };
                 }
             } else {
                 for mut spine in &mut query {

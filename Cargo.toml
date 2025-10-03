@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 bevy = { version = "0.17", default-features = false, features = [
     "bevy_log",
+    "bevy_ui_picking_backend",
     "bevy_ui_render",
     "bevy_winit",
     "png",
@@ -13,6 +14,7 @@ bevy = { version = "0.17", default-features = false, features = [
     "symphonia-isomp4",
     "wav",
     "wayland",
+    "experimental_bevy_ui_widgets",
 ] }
 bevy_spine = { path = "bevy_spine" }
 # bevy_transform_interpolation = "0.2"
