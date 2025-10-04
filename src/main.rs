@@ -45,6 +45,9 @@ struct Viewres {
     events: BTreeMap<String, Location>,
     cur_mode: ListMode,
     vn: VNConfig,
+    avg: bool,
+    avg_nodes: Vec<utage4::Node>,
+    avg_offset: u32,
 }
 
 #[derive(Component)]
@@ -73,8 +76,14 @@ impl VNText {
     }
 }
 
+#[derive(Component)]
+struct VNUI;
+
 #[derive(Message)]
 struct SceneMsg(ListMode);
+
+#[derive(Message)]
+struct VNMsg(bool);
 
 fn main() {
     App::new()
@@ -95,6 +104,7 @@ fn main() {
         .insert_resource(ClearColor(Color::NONE))
         .insert_resource(Time::<Fixed>::from_hz(5.))
         .add_message::<SceneMsg>()
+        .add_message::<VNMsg>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
             list_scene,
@@ -102,8 +112,8 @@ fn main() {
             spine_spawn.in_set(SpineSet::OnReady),
             choose_animation,
             choose_mode,
-            hide_ui,
-            vn_dialogue,
+            toggle_ui,
+            toggle_vn,
         ))
         .add_systems(FixedUpdate, (scroll, mouse_motion))
         .run();
@@ -165,6 +175,9 @@ fn setup(
         events,
         cur_mode: ListMode::Gallery,
         vn,
+        avg: false,
+        avg_nodes: Vec::new(),
+        avg_offset: 0,
     });
 
     commands.spawn((
@@ -313,12 +326,23 @@ fn choose_scene(
     mut commands: Commands,
     mut skeletons: ResMut<Assets<SkeletonData>>,
     mut view_res: ResMut<Viewres>,
+    mut vn_msg: MessageWriter<VNMsg>,
 ) {
     for (interaction, text, mut color, mut bg_color, _) in &mut interaction_query {
         match *interaction {
             Interaction::Pressed => {
                 let bundle_name = &text.to_string();
-                if let Some(file) = view_res.spines.get(bundle_name) {
+                if view_res.cur_mode == ListMode::Memory {
+                    if let Some(file) = view_res.events.get(bundle_name) {
+                        if let Ok(content) = read_to_string(format!("assets/{}/{}.{}", file.path, file.name, file.ext)) {
+                            let book = utage4::parse_book(content);
+                            view_res.avg = true;
+                            view_res.avg_nodes = book;
+                            view_res.avg_offset = 0;
+                            vn_msg.write(VNMsg(view_res.avg));
+                        }
+                    }
+                } else if let Some(file) = view_res.spines.get(bundle_name) {
                     let skeleton = if file.ext == "skel" {
                         SkeletonData::new_from_binary(
                             asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
@@ -478,13 +502,42 @@ fn choose_mode(
     }
 }
 
-fn hide_ui(
-    mut ui: Query<&mut Visibility>,
+fn toggle_ui(
+    mut viewer_ui: Query<&mut Visibility, Without<VNUI>>,
+    mut vn_ui: Query<&mut Visibility, With<VNUI>>,
     button: Res<ButtonInput<MouseButton>>,
+    view_res: ResMut<Viewres>,
 ) {
     if button.just_released(MouseButton::Right) {
-        for mut v in &mut ui {
-            v.toggle_visible_hidden();
+        if view_res.avg {
+            for mut v in &mut vn_ui {
+                v.toggle_visible_hidden();
+            }
+        } else {
+            for mut v in &mut viewer_ui {
+                v.toggle_visible_hidden();
+            }
+        }
+    }
+}
+
+fn toggle_vn(
+    mut viewer_ui: Query<&mut Visibility, Without<VNUI>>,
+    mut vn_ui: Query<&mut Visibility, With<VNUI>>,
+    mut vn_msg: MessageReader<VNMsg>,
+) {
+    if let Some(msg) = vn_msg.read().last() {
+        if msg.0 {
+            for mut v in &mut viewer_ui {
+                *v = Visibility::Hidden
+            }
+        } else {
+            for mut v in &mut viewer_ui {
+                *v = Visibility::Visible
+            }
+            for mut v in &mut vn_ui {
+                *v = Visibility::Hidden
+            }
         }
     }
 }
