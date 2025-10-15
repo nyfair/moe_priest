@@ -21,6 +21,8 @@ static LISTTEXT: Color = Color::srgb(0.2, 0.8, 0.2);
 static SELECTTEXT: Color = Color::srgb(0.8, 0.8, 0.8);
 static HOVERBG: Color = Color::srgb(0.1, 0.4, 0.1);
 static VNSPEED: Duration = Duration::from_millis(100);
+static CHARTEXT: Color = Color::srgb_u8(237, 221, 192);
+static VNTEXT: Color = Color::srgb_u8(78, 72, 70);
 
 #[derive(Debug)]
 struct Location {
@@ -37,7 +39,7 @@ enum ListMode {
 }
 
 #[derive(Resource)]
-struct Viewres {
+struct ViewRes {
     scene_menu: Option<Entity>,
     anime_menu: Option<Entity>,
     cur_spine: Vec<Entity>,
@@ -47,7 +49,7 @@ struct Viewres {
     vn: VNConfig,
     avg: bool,
     avg_nodes: Vec<utage4::Node>,
-    avg_offset: u32,
+    avg_offset: usize,
 }
 
 #[derive(Component)]
@@ -60,6 +62,9 @@ struct AnimeMenu;
 struct ModeMenu;
 
 #[derive(Component)]
+struct VNChar;
+
+#[derive(Component)]
 struct VNText {
     text: String,
     index: usize,
@@ -67,12 +72,18 @@ struct VNText {
 }
 
 impl VNText {
-    fn new(text: &str) -> Self {
+    fn new() -> Self {
         Self {
-            text: text.to_string(),
+            text: "".to_string(),
             index: 0,
             timer: Timer::new(VNSPEED, TimerMode::Once),
         }
+    }
+
+    fn update(&mut self, text: &str) {
+        self.text = text.to_string();
+        self.index = 0;
+        self.timer = Timer::new(VNSPEED, TimerMode::Repeating);
     }
 }
 
@@ -83,7 +94,10 @@ struct VNUI;
 struct SceneMsg(ListMode);
 
 #[derive(Message)]
-struct VNMsg(bool);
+struct VNToogleMsg(bool);
+
+#[derive(Message)]
+struct VNMsg;
 
 fn main() {
     App::new()
@@ -104,6 +118,7 @@ fn main() {
         .insert_resource(ClearColor(Color::NONE))
         .insert_resource(Time::<Fixed>::from_hz(5.))
         .add_message::<SceneMsg>()
+        .add_message::<VNToogleMsg>()
         .add_message::<VNMsg>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
@@ -114,6 +129,8 @@ fn main() {
             choose_mode,
             toggle_ui,
             toggle_vn,
+            play_vn,
+            vn_dialogue,
         ))
         .add_systems(FixedUpdate, (scroll, mouse_motion))
         .run();
@@ -167,7 +184,7 @@ fn setup(
     }
 
     commands.spawn(Camera2d);
-    commands.insert_resource(Viewres {
+    commands.insert_resource(ViewRes {
         scene_menu: None,
         anime_menu: None,
         cur_spine: vec![],
@@ -218,12 +235,57 @@ fn setup(
             ..default()
         },
     ));
+
+    commands.spawn((
+        Visibility::Hidden,
+        Sprite {
+            image: asset_server.load("AdvScene.png"),
+            color: Color::srgba(1.0, 1.0, 1.0, 0.6),
+            ..default()
+        },
+        VNUI,
+        Transform::from_translation(Vec3::new(0., -457., 2.)),
+    ));
+    commands.spawn((
+        Visibility::Hidden,
+        Node {
+            top: Val::Percent(78.),
+            left: Val::Percent(24.),
+            ..default()
+        },
+        Text::new("主人公"),
+        VNUI,
+        VNChar,
+        TextFont {
+            font: asset_server.load(FONT),
+            font_size: 32.,
+            ..default()
+        },
+        TextColor(CHARTEXT),
+    ));
+    commands.spawn((
+        Visibility::Hidden,
+        Node {
+            top: Val::Percent(84.),
+            left: Val::Percent(25.),
+            ..default()
+        },
+        Text::new(""),
+        VNUI,
+        VNText::new(),
+        TextFont {
+            font: asset_server.load(FONT),
+            font_size: 32.,
+            ..default()
+        },
+        TextColor(VNTEXT),
+    ));
 }
 
 fn list_scene(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut view_res: ResMut<Viewres>,
+    mut view_res: ResMut<ViewRes>,
     mut scene_msg: MessageReader<SceneMsg>,
 ) {
     if let Some(event) = scene_msg.read().last() {
@@ -325,8 +387,8 @@ fn choose_scene(
     ), (Changed<Interaction>, With<Button>),>,
     mut commands: Commands,
     mut skeletons: ResMut<Assets<SkeletonData>>,
-    mut view_res: ResMut<Viewres>,
-    mut vn_msg: MessageWriter<VNMsg>,
+    mut view_res: ResMut<ViewRes>,
+    mut vn_ui_msg: MessageWriter<VNToogleMsg>,
 ) {
     for (interaction, text, mut color, mut bg_color, _) in &mut interaction_query {
         match *interaction {
@@ -339,7 +401,7 @@ fn choose_scene(
                             view_res.avg = true;
                             view_res.avg_nodes = book;
                             view_res.avg_offset = 0;
-                            vn_msg.write(VNMsg(view_res.avg));
+                            vn_ui_msg.write(VNToogleMsg(true));
                         }
                     }
                 } else if let Some(file) = view_res.spines.get(bundle_name) {
@@ -383,7 +445,7 @@ fn spine_spawn(
     mut spine_ready_msg: MessageReader<SpineReadyMsg>,
     mut spine_query: Query<&mut Spine>,
     mut commands: Commands,
-    mut view_res: ResMut<Viewres>,
+    mut view_res: ResMut<ViewRes>,
 ) {
     for msg in spine_ready_msg.read() {
         if let Some(entity) = view_res.anime_menu {
@@ -478,7 +540,7 @@ fn choose_mode(
         &mut BackgroundColor,
         &ModeMenu,
     ), (Changed<Interaction>, With<Button>),>,
-    mut view_res: ResMut<Viewres>,
+    mut view_res: ResMut<ViewRes>,
     mut scene_msg: MessageWriter<SceneMsg>,
 ) {
     for (interaction, text, mut bg_color, _) in &mut interaction_query {
@@ -506,7 +568,7 @@ fn toggle_ui(
     mut viewer_ui: Query<&mut Visibility, Without<VNUI>>,
     mut vn_ui: Query<&mut Visibility, With<VNUI>>,
     button: Res<ButtonInput<MouseButton>>,
-    view_res: ResMut<Viewres>,
+    view_res: ResMut<ViewRes>,
 ) {
     if button.just_released(MouseButton::Right) {
         if view_res.avg {
@@ -524,13 +586,15 @@ fn toggle_ui(
 fn toggle_vn(
     mut viewer_ui: Query<&mut Visibility, Without<VNUI>>,
     mut vn_ui: Query<&mut Visibility, With<VNUI>>,
-    mut vn_msg: MessageReader<VNMsg>,
+    mut vn_ui_msg: MessageReader<VNToogleMsg>,
+    mut vn_msg: MessageWriter<VNMsg>,
 ) {
-    if let Some(msg) = vn_msg.read().last() {
+    if let Some(msg) = vn_ui_msg.read().last() {
         if msg.0 {
             for mut v in &mut viewer_ui {
                 *v = Visibility::Hidden
             }
+            vn_msg.write(VNMsg);
         } else {
             for mut v in &mut viewer_ui {
                 *v = Visibility::Visible
@@ -593,23 +657,48 @@ fn mouse_motion(
 }
 
 fn vn_dialogue(
-    mut query: Query<&mut VNText>,
-    e_query: Query<Entity, With<VNText>>,
-    view_res: Res<Viewres>,
+    mut vn_text: Single<&mut VNText>,
+    mut text: Single<&mut Text, With<VNText>>,
+    view_res: Res<ViewRes>,
     time: Res<Time>,
-    mut writer: TextUiWriter,
 ) {
     if view_res.cur_mode == ListMode::Memory {
-        for mut say in query.iter_mut() {
-            say.timer.tick(time.delta());
-            if say.timer.just_finished() && say.index < say.text.len() {
-                say.index += 1;
-                let displayed_text: String = say.text
-                    .chars()
-                    .take(say.index)
-                    .collect();
-                for entity in e_query.iter() {
-                    *writer.text(entity, 0)  = displayed_text.clone();
+        vn_text.timer.tick(time.delta());
+        if vn_text.timer.just_finished() && vn_text.index < vn_text.text.len() {
+            vn_text.index += 1;
+            let displayed_text: String = vn_text.text
+                .chars()
+                .take(vn_text.index)
+                .collect();
+            text.0 = displayed_text.clone();
+        }
+    }
+}
+
+fn play_vn(
+    mut vn_ui: Query<&mut Visibility, With<VNUI>>,
+    mut vn_text: Single<&mut VNText>,
+    mut vn_msg: MessageReader<VNMsg>,
+    view_res: ResMut<ViewRes>,
+) {
+    if let Some(_) = vn_msg.read().last() {
+        let mut i = view_res.avg_offset;
+        while i + 1 < view_res.avg_nodes.len() {
+            let node = &view_res.avg_nodes[i];
+            i += 1;
+            match node.command {
+                None => {
+                    info!("{:?}", node);
+                    for mut v in &mut vn_ui {
+                        *v = Visibility::Visible;
+                    }
+                    if let Some(t) = &node.text {
+                        vn_text.update(t);
+                        break;
+                    }
+                }
+                _ => {
+                    info!("{:?}", node);
                 }
             }
         }
