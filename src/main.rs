@@ -9,7 +9,7 @@ use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar, Scroll
 use bevy::window::{PrimaryWindow, WindowMode};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
-use regex::Regex;
+use regex::{Regex, Captures};
 use std::collections::BTreeMap;
 use std::fs::read_to_string;
 use std::time::Duration;
@@ -43,15 +43,6 @@ macro_rules! f32 {
     };
     ($var:ident, $default:expr) => {
         $var.parse::<f32>().unwrap_or($default)
-    };
-}
-
-macro_rules! dump {
-    (let mut $var:ident = $source:expr, $default:expr) => {
-        let mut $var = $source.as_ref().map_or($default, |f| f.parse::<f32>().unwrap_or($default));
-    };
-    (let $var:ident = $source:expr, $default:expr) => {
-        let $var = $source.as_ref().map_or($default, |f| f.parse::<f32>().unwrap_or($default));
     };
     ($var:ident = $source:expr) => {
         $var = $source.as_ref().map_or($var, |f| f.parse::<f32>().unwrap_or($var));
@@ -146,8 +137,15 @@ impl VNText {
     }
 
     fn update(&mut self, text: &str) {
-        let re = Regex::new(r"<[^>]*>").unwrap();
-        self.text = re.replace_all(text, "").into_owned();
+        // <interval=???> to ..., remove other tags
+        let re = Regex::new(r"(?P<interval_tag><interval=[^>]*>)|(?P<other_tag><[^>]*>)").unwrap();
+        self.text = re.replace_all(text, |caps: &Captures| {
+            if caps.name("interval_tag").is_some() {
+                "……"
+            } else {
+                ""
+            }
+        }).into_owned();
         self.index = 0;
         self.timer = Timer::new(VNSPEED, TimerMode::Repeating);
     }
@@ -190,14 +188,32 @@ impl FadeOverlay {
     }
 }
 
-#[derive(Component)]
-struct LayerBG;
+#[derive(PartialEq)]
+enum TextureType {
+    Bg,
+    BgEvent,
+    Sprite,
+}
 
 #[derive(Component)]
-struct VNAudio;
+struct VNTexture(TextureType, String, String);
+
+#[derive(PartialEq)]
+enum AudioType {
+    Bgm,
+    Se,
+    Ambience,
+    Voice,
+}
 
 #[derive(Component)]
-struct VNUI;
+struct VNAudio(AudioType, String);
+
+#[derive(Component)]
+struct AudioFade(f32);
+
+#[derive(Component)]
+struct VNGui;
 
 #[derive(Message)]
 struct SceneMsg(ListMode);
@@ -207,9 +223,6 @@ struct VNToogleMsg(bool);
 
 #[derive(Message)]
 struct VNMsg;
-
-#[derive(Message)]
-struct FadeSoundMsg(String, f32);
 
 fn main() {
     App::new()
@@ -232,7 +245,6 @@ fn main() {
         .add_message::<SceneMsg>()
         .add_message::<VNToogleMsg>()
         .add_message::<VNMsg>()
-        .add_message::<FadeSoundMsg>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
             list_scene,
@@ -244,9 +256,11 @@ fn main() {
             toggle_vn,
             play_vn,
             vn_dialogue,
-            fade,
+            fade_overlay,
+            fade_sound,
+            check_wait,
         ))
-        .add_systems(FixedUpdate, (mouse_scroll, mouse_spine_move, check_wait))
+        .add_systems(FixedUpdate, (mouse_scroll, mouse_spine_move))
         .run();
 }
 
@@ -357,7 +371,7 @@ fn setup(
             color: Color::srgba(1., 1., 1., 0.6),
             ..default()
         },
-        VNUI,
+        VNGui,
         Transform::from_translation(Vec3::new(0., -457., Z_UI as f32)).with_scale(Vec3::ONE),
     ));
     commands.spawn((
@@ -369,7 +383,7 @@ fn setup(
             ..default()
         },
         Text::new(""),
-        VNUI,
+        VNGui,
         VNChar,
         TextFont {
             font: asset_server.load(FONT),
@@ -387,7 +401,7 @@ fn setup(
             ..default()
         },
         Text::new(""),
-        VNUI,
+        VNGui,
         VNText::new(),
         TextFont {
             font: asset_server.load(FONT),
@@ -402,13 +416,13 @@ fn list_scene(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     scene_query: Query<Entity, With<SceneMenuList>>,
-    view_res: Res<ViewRes>,
     mut scene_msg: MessageReader<SceneMsg>,
+    view_res: Res<ViewRes>,
 ) {
     if let Some(event) = scene_msg.read().last() {
-        for entity in scene_query {
-            commands.entity(entity).despawn();
-        }
+        scene_query.iter().for_each(|entity| {
+            commands.entity(entity).despawn()
+        });
         commands.spawn((
             Visibility::Visible,
             SceneMenuList,
@@ -495,6 +509,7 @@ fn list_scene(
 
 fn choose_scene(
     asset_server: Res<AssetServer>,
+    mut commands: Commands,
     mut interaction_query: Query<(
         &Interaction,
         &Text,
@@ -503,12 +518,11 @@ fn choose_scene(
         &SceneMenu,
     ), (Changed<Interaction>, With<Button>),>,
     spine_query: Query<Entity, With<Spine>>,
-    mut commands: Commands,
     mut skeletons: ResMut<Assets<SkeletonData>>,
-    mut view_res: ResMut<ViewRes>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
+    mut view_res: ResMut<ViewRes>,
 ) {
-    for (interaction, text, mut color, mut bg_color, _) in &mut interaction_query {
+    interaction_query.iter_mut().for_each(|(interaction, text, mut color, mut bg_color, _)| {
         match *interaction {
             Interaction::Pressed => {
                 let bundle_name = &text.to_string();
@@ -519,6 +533,8 @@ fn choose_scene(
                             view_res.avg = true;
                             view_res.avg_nodes = book;
                             view_res.avg_offset = 0;
+                            view_res.wait_timer = None;
+                            view_res.fast = false;
                             vn_ui_msg.write(VNToogleMsg(true));
                         }
                 } else if let Some(file) = view_res.spines.get(bundle_name) {
@@ -534,9 +550,9 @@ fn choose_scene(
                         )
                     };
                     let skeleton_handle = skeletons.add(skeleton);
-                    for entity in spine_query {
-                        commands.entity(entity).despawn();
-                    }
+                    spine_query.iter().for_each(|entity| {
+                        commands.entity(entity).despawn()
+                    });
                     commands.spawn(SpineBundle {
                         skeleton: skeleton_handle.clone().into(),
                         transform: Transform::from_xyz(0., 0., Z_CG as f32).with_scale(Vec3::ONE * 0.5),
@@ -553,20 +569,20 @@ fn choose_scene(
                 *bg_color = Color::NONE.into();
             }
         }
-    }
+    })
 }
 
 fn spine_spawn(
     asset_server: Res<AssetServer>,
-    mut spine_ready_msg: MessageReader<SpineReadyMsg>,
+    mut commands: Commands,
     mut spine_query: Query<&mut Spine>,
     anime_query: Query<Entity, With<AnimeMenuList>>,
-    mut commands: Commands,
+    mut spine_ready_msg: MessageReader<SpineReadyMsg>,
 ) {
     for msg in spine_ready_msg.read() {
-        for entity in anime_query {
-            commands.entity(entity).despawn();
-        }
+        anime_query.iter().for_each(|entity| {
+            commands.entity(entity).despawn()
+        });
         let mut animation_list = Vec::new();
         if let Ok(mut spine) = spine_query.get_mut(msg.entity) {
             let Spine(SkeletonController {
@@ -630,12 +646,12 @@ fn choose_animation(
     ), (Changed<Interaction>, With<Button>),>,
     mut spine_query: Query<&mut Spine>,
 ) {
-    for (interaction, text, mut color, mut bg_color, _) in &mut interaction_query {
+    interaction_query.iter_mut().for_each(|(interaction, text, mut color, mut bg_color, _)| {
         match *interaction {
             Interaction::Pressed => {
-                for mut spine in &mut spine_query {
+                spine_query.iter_mut().for_each(|mut spine| {
                     let _ = spine.animation_state.set_animation_by_name(0, text, true);
-                }
+                })
             }
             Interaction::Hovered => {
                 *color = SELECTTEXT.into();
@@ -646,7 +662,7 @@ fn choose_animation(
                 *bg_color = Color::NONE.into();
             }
         }
-    }
+    })
 }
 
 fn choose_mode(
@@ -656,10 +672,10 @@ fn choose_mode(
         &mut BackgroundColor,
         &ModeMenu,
     ), (Changed<Interaction>, With<Button>),>,
-    mut view_res: ResMut<ViewRes>,
     mut scene_msg: MessageWriter<SceneMsg>,
+    mut view_res: ResMut<ViewRes>,
 ) {
-    for (interaction, text, mut bg_color, _) in &mut interaction_query {
+    interaction_query.iter_mut().for_each(|(interaction, text, mut bg_color, _)| {
         match *interaction {
             Interaction::Pressed => {
                 let mode = match text.as_str() {
@@ -677,27 +693,27 @@ fn choose_mode(
                 *bg_color = Color::NONE.into();
             }
         }
-    }
+    })
 }
 
 fn input_handler(
-    mut viewer_ui: Query<&mut Visibility, Without<VNUI>>,
-    mut vn_ui: Query<&mut Visibility, With<VNUI>>,
-    button: Res<ButtonInput<MouseButton>>,
-    key: Res<ButtonInput<KeyCode>>,
+    mut viewer_ui: Query<&mut Visibility, Without<VNGui>>,
+    mut vn_ui: Query<&mut Visibility, With<VNGui>>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
     mut vn_msg: MessageWriter<VNMsg>,
+    button: Res<ButtonInput<MouseButton>>,
+    key: Res<ButtonInput<KeyCode>>,
     mut view_res: ResMut<ViewRes>,
 ) {
     if button.just_pressed(MouseButton::Right) {
         if view_res.avg {
-            for mut v in &mut vn_ui {
-                v.toggle_visible_hidden();
-            }
+            vn_ui.iter_mut().for_each(|mut v| {
+                v.toggle_visible_hidden()
+            })
         } else {
-            for mut v in &mut viewer_ui {
-                v.toggle_visible_hidden();
-            }
+            viewer_ui.iter_mut().for_each(|mut v| {
+                v.toggle_visible_hidden()
+            })
         }
     }
 
@@ -708,6 +724,7 @@ fn input_handler(
         }
         if key.just_pressed(KeyCode::Escape) {
             view_res.avg = false;
+            view_res.wait_timer = None;
             vn_ui_msg.write(VNToogleMsg(false));
         }
         if key.just_released(KeyCode::ControlLeft) | key.just_released(KeyCode::ControlRight) {
@@ -720,21 +737,21 @@ fn input_handler(
 }
 
 fn toggle_vn(
-    mut viewer_ui: Query<&mut Visibility, Without<VNUI>>,
-    mut vn_ui: Query<&mut Visibility, With<VNUI>>,
+    mut commands: Commands,
+    mut viewer_ui: Query<&mut Visibility, Without<VNGui>>,
+    mut vn_ui: Query<&mut Visibility, With<VNGui>>,
     mut text: Single<&mut Text, With<VNText>>,
     mut vn_text: Single<&mut VNText>,
     spine_query: Query<Entity, With<Spine>>,
-    despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<LayerBG>, With<VNAudio>)>>,
-    mut commands: Commands,
+    despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<VNTexture>, With<VNAudio>)>>,
     mut vn_ui_msg: MessageReader<VNToogleMsg>,
     mut vn_msg: MessageWriter<VNMsg>,
 ) {
     if let Some(msg) = vn_ui_msg.read().last() {
         if msg.0 {
-            for entity in spine_query {
-                commands.entity(entity).despawn();
-            }
+            spine_query.iter().for_each(|entity| {
+                commands.entity(entity).despawn()
+            });
             for mut v in &mut viewer_ui {
                 *v = Visibility::Hidden
             }
@@ -742,25 +759,25 @@ fn toggle_vn(
         } else {
             text.0 = String::new();
             vn_text.text = String::new();
-            for entity in despawn_query {
-                commands.entity(entity).despawn();
-            }
-            for mut v in &mut vn_ui {
+            despawn_query.iter().for_each(|entity| {
+                commands.entity(entity).despawn()
+            });
+            vn_ui.iter_mut().for_each(|mut v| {
                 *v = Visibility::Hidden
-            }
-            for mut v in &mut viewer_ui {
+            });
+            viewer_ui.iter_mut().for_each(|mut v| {
                 *v = Visibility::Visible
-            }
+            });
         }
     }
 }
 
 fn mouse_scroll(
-    mut query: Query<&mut Transform, Or<(With<Spine>, With<LayerBG>)>>,
-    mut scroll: MessageReader<MouseWheel>,
-    scrollbar_query: Query<&Scrollbar>,
+    mut spine_query: Query<&mut Transform, Or<(With<Spine>, With<VNTexture>)>>,
+    scrollbar: Single<&Scrollbar>,
     mut scrolled_query: Query<(&mut ScrollPosition, &ComputedNode), Without<Scrollbar>>,
     window: Single<&Window, With<PrimaryWindow>>,
+    mut scroll: MessageReader<MouseWheel>,
     time: Res<Time>,
 ) {
     for ev in scroll.read() {
@@ -770,26 +787,24 @@ fn mouse_scroll(
         let delta_secs = time.delta_secs();
         if let Some(pos) = window.cursor_position() {
             if pos.x > window.width() * 0.88 {
-                for scrollbar in scrollbar_query {
-                    if let Ok((mut scroll_pos, scroll_content)) = scrolled_query.get_mut(scrollbar.target) {
-                        let visible_size = scroll_content.size() * scroll_content.inverse_scale_factor;
-                        let content_size = scroll_content.content_size() * scroll_content.inverse_scale_factor;
-                        let range = (content_size.y - visible_size.y).max(0.);
-                        scroll_pos.y -= ev.y * 5000. * delta_secs;
-                        scroll_pos.y = scroll_pos.y.clamp(0., range);
-                    };
-                }
+                if let Ok((mut scroll_pos, scroll_content)) = scrolled_query.get_mut(scrollbar.target) {
+                    let visible_size = scroll_content.size() * scroll_content.inverse_scale_factor;
+                    let content_size = scroll_content.content_size() * scroll_content.inverse_scale_factor;
+                    let range = (content_size.y - visible_size.y).max(0.);
+                    scroll_pos.y -= ev.y * 5000. * delta_secs;
+                    scroll_pos.y = scroll_pos.y.clamp(0., range);
+                };
             } else {
-                for mut spine in &mut query {
-                    spine.scale += ev.y * 0.1 * delta_secs;
-                }
+                spine_query.iter_mut().for_each(|mut spine| {
+                    spine.scale += ev.y * 0.1 * delta_secs
+                });
             }
         }
     }
 }
 
 fn mouse_spine_move(
-    mut query: Query<&mut Transform, Or<(With<Spine>, With<LayerBG>)>>,
+    mut spine_query: Query<&mut Transform, Or<(With<Spine>, With<VNTexture>)>>,
     mut motion: MessageReader<MouseMotion>,
     button: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
@@ -797,27 +812,29 @@ fn mouse_spine_move(
     if button.pressed(MouseButton::Middle) {
         let delta_secs = time.delta_secs();
         for ev in motion.read() {
-            for mut spine in &mut query {
+            spine_query.iter_mut().for_each(|mut spine| {
                 spine.translation.x += ev.delta.x * 6. * delta_secs;
                 spine.translation.y -= ev.delta.y * 6. * delta_secs;
-            }
+            })
         }
     }
 }
 
 fn check_wait(
-    mut view_res: ResMut<ViewRes>,
     mut vn_msg: MessageWriter<VNMsg>,
     time: Res<Time>,
+    mut view_res: ResMut<ViewRes>,
 ) {
-    if view_res.fast {
-        view_res.wait_timer = None;
-        vn_msg.write(VNMsg);
-    } else if let Some(timer) = &mut view_res.wait_timer {
-        timer.tick(time.delta());
-        if timer.is_finished() {
+    if view_res.avg {
+        if view_res.fast {
             view_res.wait_timer = None;
             vn_msg.write(VNMsg);
+        } else if let Some(timer) = &mut view_res.wait_timer {
+            timer.tick(time.delta());
+            if timer.is_finished() {
+                view_res.wait_timer = None;
+                vn_msg.write(VNMsg);
+            }
         }
     }
 }
@@ -826,10 +843,10 @@ fn vn_dialogue(
     mut vn_text: Single<&mut VNText>,
     mut text: Single<&mut Text, With<VNText>>,
     fade_query: Query<&FadeOverlay>,
-    view_res: Res<ViewRes>,
     time: Res<Time>,
+    view_res: Res<ViewRes>,
 ) {
-    if view_res.mode == ListMode::Memory && fade_query.count() == 0 {
+    if view_res.avg && fade_query.count() == 0 {
         vn_text.timer.tick(time.delta());
         if vn_text.timer.just_finished() && vn_text.index < vn_text.len() {
             vn_text.index += 1;
@@ -842,36 +859,52 @@ fn vn_dialogue(
     }
 }
 
-fn fade(
-    mut query: Query<(Entity, &mut FadeOverlay, &mut BackgroundColor)>,
+fn fade_overlay(
     mut commands: Commands,
+    mut fade_query: Query<(Entity, &mut FadeOverlay, &mut BackgroundColor)>,
     time: Res<Time>,
 ) {
-    for (entity, mut fade, mut color) in query.iter_mut() {
+    fade_query.iter_mut().for_each(|(entity, mut fade, mut color)| {
         fade.timer.tick(time.delta());
         if fade.timer.just_finished() {
             commands.entity(entity).despawn();
-            continue;
-        }
-        let mut new_color = fade.color;
-        if fade.fade_out {
-            new_color.set_alpha(fade.timer.fraction());
         } else {
-            new_color.set_alpha(fade.timer.fraction_remaining());
+            let mut new_color = fade.color;
+            if fade.fade_out {
+                new_color.set_alpha(fade.timer.fraction());
+            } else {
+                new_color.set_alpha(fade.timer.fraction_remaining());
+            }
+            *color = BackgroundColor(new_color);
         }
-        *color = BackgroundColor(new_color);
+    })
+}
+
+fn fade_sound(
+    mut commands: Commands,
+    mut audio_query: Query<(Entity, &mut AudioSink, &AudioFade)>,
+    time: Res<Time>,
+) {
+    for (entity, mut audio, fade) in audio_query.iter_mut() {
+        let cur_volume = audio.volume();
+        audio.set_volume(
+            cur_volume.fade_towards(Volume::Linear(0.), time.delta_secs() / fade.0),
+        );
+        if audio.volume().to_linear() <= 0. {
+            commands.entity(entity).despawn();
+        }
     }
 }
 
 fn play_vn(
     asset_server: Res<AssetServer>,
+    mut commands: Commands,
     mut vn_char: Single<&mut Text, With<VNChar>>,
     mut vn_text: Single<&mut VNText>,
-    mut vn_ui: Query<&mut Visibility, With<VNUI>>,
+    mut vn_ui: Query<&mut Visibility, With<VNGui>>,
+    mut audio_query: Query<(Entity, &VNAudio)>,
     mut vn_msg: MessageReader<VNMsg>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
-    mut fade_sound_msg: MessageWriter<FadeSoundMsg>,
-    mut commands: Commands,
     mut view_res: ResMut<ViewRes>,
 ) {
     if vn_msg.read().last().is_some() {
@@ -879,23 +912,22 @@ fn play_vn(
             return
         }
         if vn_text.finished() {
-            let mut i = view_res.avg_offset;
-            while i < view_res.avg_nodes.len() {
-                let node = &view_res.avg_nodes[i];
-                i += 1;
+            while view_res.avg_offset < view_res.avg_nodes.len() {
+                let node = &view_res.avg_nodes[view_res.avg_offset];
                 info!("{:?}", node);
                 match node.command.as_ref().map(|s| &s[..]) {
                     None => {
                         if let Some(t) = &node.text {
                             vn_text.update(t);
-                            for mut v in &mut vn_ui {
-                                *v = Visibility::Visible;
-                            }
+                            vn_ui.iter_mut().for_each(|mut v| {
+                                *v = Visibility::Visible
+                            });
                             let char_name = str!(node.arg1);
                             vn_char.0 = char_name.to_string();
                             if let Some(voice) = &node.voice {
+                                stop_voice_cmd(&mut commands, &mut audio_query);
                                 commands.spawn((
-                                    VNAudio,
+                                    VNAudio(AudioType::Voice, "".into()),
                                     AudioPlayer::new(
                                         asset_server.load(format!("{}{}.m4a", VOICE, voice))
                                     ),
@@ -906,127 +938,264 @@ fn play_vn(
                                     },
                                 ));
                             }
+                            view_res.avg_offset += 1;
                             break;
                         }
                     }
                     Some(f @ "FadeOut") | Some(f @ "FadeIn") => {
-                        let mut overlay = FadeOverlay::new(
-                            str!(node.arg1, "#FFFFFF"),
-                            str!(node.arg6, "0.2"),
-                            matches!(f, "FadeOut")
-                        );
-                        let init_color = overlay.init_color();
-                        commands.spawn((
-                            Node {
-                                width: Val::Percent(100.0),
-                                height: Val::Percent(100.0),
-                                ..default()
-                            },
-                            BackgroundColor(init_color),
-                            ZIndex(Z_FADE),
-                            overlay,
-                        ));
+                        fade_overlay_cmd(f, node, &mut commands);
                     }
-                    Some(f @ "Bg") | Some(f @ "BgEvent") => {
-                        let texture = view_res.vn.texture.get(str!(node.arg1));
-                        let layer = view_res.vn.layer.get(str!(node.arg3));
-                        if let (Some(texture), Some(layer)) = (texture, layer) {
-                            dump!(let mut x = layer.x, 0.);
-                            dump!(let mut y = layer.y, 0.);
-                            dump!(let mut z = layer.order, 0.);
-                            dump!(let mut scale_x = layer.scale_x, 1.);
-                            dump!(let mut scale_y = layer.scale_y, 1.);
-                            dump!(x = texture.x);
-                            dump!(y = texture.y);
-                            dump!(z = texture.z);
-                            dump!(scale_x = texture.scale);
-                            dump!(scale_y = texture.scale);
-                            let (bg_type, scale_factor) = match f {
-                                "BgEvent" => (EVENT, 1.35),
-                                "Sprite" => (SPRITE, 1.),
-                                _ => (BG, 1.725),
-                            };
-                            commands.spawn((
-                                Sprite {
-                                    image: asset_server.load(format!("{}{}", bg_type, str!(texture.file_name))),
-                                    ..default()
-                                },
-                                LayerBG,
-                                Transform::from_xyz(x, y, z).with_scale(
-                                    Vec3::new(scale_x * scale_factor, scale_y * scale_factor, 1.)),
-                            ));
-                        }
+                    Some(f @ "Bg") | Some(f @ "BgEvent") | Some(f @ "Sprite") => {
+                        img_cmd(f, node, &asset_server, &mut commands, &view_res);
                     }
-                    Some(f @ "Bgm") | Some(f @ "Ambience") | Some(f @ "Se") => {
-                        let sound = view_res.vn.sound.get(str!(node.arg1));
-                        if let Some(sound) = sound {
-                            f32!(let mut volume = node.arg3, 1.);
-                            dump!(volume = sound.volume);
-                            let file = str!(sound.file_name);
-                            let (sound_type, mut loop_type) = match f {
-                                "Bgm" => (BGM, PlaybackMode::Loop),
-                                "Ambience" => (SE, PlaybackMode::Loop),
-                                _ => (SE, PlaybackMode::Despawn),
-                            };
-                            match node.arg2.as_deref() {
-                                Some("TRUE") => { loop_type = PlaybackMode::Loop }
-                                Some("FALSE") => { loop_type = PlaybackMode::Despawn }
-                                _ => ()
-                            }
-                            commands.spawn((
-                                VNAudio,
-                                AudioPlayer::new(
-                                    asset_server.load(format!("{}{}.m4a", sound_type, &file[.. file.len() - 4]))
-                                ),
-                                PlaybackSettings {
-                                    mode: loop_type,
-                                    volume: Volume::Linear(volume),
-                                    ..default()
-                                },
-                            ));
-                        }
+                    Some(f @ "Se") | Some(f @ "Bgm") | Some(f @ "Ambience") => {
+                        sound_cmd(f, node, &asset_server, &mut commands, &mut audio_query, &view_res);
+                    }
+                    Some(f @ "StopSe") | Some(f @ "StopBgm") | Some(f @ "StopAmbience") => {
+                        stop_sound_item_cmd(f, node, &mut commands, &mut audio_query);
                     }
                     Some("Voice") => {
-                        if let Some(voice) = &node.voice {
-                            f32!(let volume = node.arg3, 1.);
-                            let loop_type = match node.arg2.as_deref() {
-                                Some("TRUE") => { PlaybackMode::Loop }
-                                _ => { PlaybackMode::Despawn }
-                            };
-                            f32!(let fade_time = node.arg6, 0.3);
-                            fade_sound_msg.write(FadeSoundMsg(String::new(), fade_time));
-                            commands.spawn((
-                                VNAudio,
-                                AudioPlayer::new(
-                                    asset_server.load(format!("{}{}.m4a", VOICE, voice))
-                                ),
-                                PlaybackSettings {
-                                    mode: loop_type,
-                                    volume: Volume::Linear(volume),
-                                    ..default()
-                                },
-                            ));
-                        }
+                        voice_cmd(node, &asset_server, &mut commands, &mut audio_query);
+                    }
+                    Some("StopVoice") => {
+                        stop_voice_cmd(&mut commands, &mut audio_query);
+                    }
+                    Some("StopSound") => {
+                        stop_sound_cmd(node, &mut commands, &mut audio_query);
                     }
                     Some("Wait") => {
                         f32!(let t = node.arg6, 0.1);
                         view_res.wait_timer = Some(Timer::from_seconds(t, TimerMode::Once));
+                        view_res.avg_offset += 1;
                         break;
                     }
                     Some(cmd) => warn!("Command {} Unimplemented", cmd)
                 }
+                view_res.avg_offset += 1;
             }
-            if i >= view_res.avg_nodes.len() {
+            if view_res.avg_offset >= view_res.avg_nodes.len() {
                 view_res.avg = false;
+                view_res.wait_timer = None;
                 vn_ui_msg.write(VNToogleMsg(false));
-            } else {
-                view_res.avg_offset = i;
             }
         } else {
             vn_text.skip_to_end();
-            for mut v in &mut vn_ui {
-                *v = Visibility::Visible;
-            }
+            vn_ui.iter_mut().for_each(|mut v| {
+                *v = Visibility::Visible
+            })
         }
     }
+}
+
+fn fade_overlay_cmd(
+    f: &str,
+    node: &utage4::Node,
+    commands: &mut Commands,
+) {
+    let mut overlay = FadeOverlay::new(
+        str!(node.arg1, "#FFFFFF"),
+        str!(node.arg6, "0.2"),
+        matches!(f, "FadeOut")
+    );
+    let init_color = overlay.init_color();
+    commands.spawn((
+        Node {
+            width: Val::Percent(100.),
+            height: Val::Percent(100.),
+            ..default()
+        },
+        BackgroundColor(init_color),
+        ZIndex(Z_FADE),
+        overlay,
+    ));
+}
+
+fn img_cmd(
+    f: &str,
+    node: &utage4::Node,
+    asset_server: &Res<AssetServer>,
+    commands: &mut Commands,
+    view_res: &ResMut<ViewRes>,
+) {
+    if let Some(texture) = view_res.vn.texture.get(str!(node.arg1))
+            .or_else(|| view_res.vn.texture.get(str!(node.arg2))) {
+        let layer = view_res.vn.layer.get(str!(node.arg3));
+        // type for ecs query
+        let real_type = match f {
+            "Bg" => TextureType::Bg,
+            "BgEvent" => TextureType::BgEvent,
+            "Sprite" => TextureType::Sprite,
+            _ => return
+        };
+        // type for texture file search
+        let texture_type = match texture.entry_type.as_deref() {
+            Some("Bg") => "Bg",
+            Some("Event") => "BgEvent",
+            Some("Sprite") => "Sprite",
+            _ => f,
+        };
+        let (img_path, scale_factor) = match texture_type {
+            "Bg" => (BG, 1.725),
+            "BgEvent" => (EVENT, 1.35),
+            "Sprite" => (SPRITE, 1.),
+            _ => return
+        };
+        let (mut x, mut y, mut z, mut scale_x, mut scale_y) = (0., 0., 0., 1., 1.);
+        if let Some(layer) = layer {
+            f32!(x = layer.x);
+            f32!(y = layer.y);
+            f32!(z = layer.order);
+            f32!(scale_x = layer.scale_x);
+            f32!(scale_y = layer.scale_y);
+        }
+        f32!(x = texture.x);
+        f32!(y = texture.y);
+        f32!(z = texture.z);
+        f32!(scale_x = texture.scale);
+        f32!(scale_y = texture.scale);
+        commands.spawn((
+            Sprite {
+                image: asset_server.load(format!("{}{}", img_path, str!(texture.file_name))),
+                ..default()
+            },
+            VNTexture(real_type, "".into(), "".into()),
+            Transform::from_xyz(x, y, z).with_scale(Vec3::new(scale_x * scale_factor, scale_y * scale_factor, 1.)),
+        ));
+    }
+}
+
+fn sound_cmd(
+    f: &str,
+    node: &utage4::Node,
+    asset_server: &Res<AssetServer>,
+    commands: &mut Commands,
+    audio_query: &mut Query<(Entity, &VNAudio)>,
+    view_res: &ResMut<ViewRes>,
+) {
+    let sound = view_res.vn.sound.get(str!(node.arg1));
+    if let Some(sound) = sound {
+        f32!(let mut volume = sound.volume, 1.);
+        f32!(volume = node.arg3);
+        let file = str!(sound.file_name);
+        let (audio_path, audio_type, mut loop_type) = match f {
+            "Se" => (SE, AudioType::Se, PlaybackMode::Despawn),
+            "Bgm" => (BGM, AudioType::Bgm, PlaybackMode::Loop),
+            "Ambience" => (SE, AudioType::Ambience, PlaybackMode::Loop),
+            _ => return
+        };
+        match node.arg2.as_deref() {
+            Some("TRUE") => { loop_type = PlaybackMode::Loop }
+            Some("FALSE") => { loop_type = PlaybackMode::Despawn }
+            _ => ()
+        }
+        // fade out previous bgm or ambience
+        if matches!(audio_type, AudioType::Bgm | AudioType::Ambience) {
+            f32!(let fade_time = node.arg5, 0.2);
+            audio_query.iter_mut()
+                .filter(|x| x.1.0 == audio_type)
+                .for_each(|(entity, _)| {
+                    commands.entity(entity).insert(AudioFade(fade_time));
+                }
+            )
+        }
+        commands.spawn((
+            VNAudio(audio_type, str!(node.arg1).into()),
+            AudioPlayer::new(
+                // replace file extension to m4a
+                asset_server.load(format!("{}{}.m4a", audio_path, &file[.. file.len() - 4]))
+            ),
+            PlaybackSettings {
+                mode: loop_type,
+                volume: Volume::Linear(volume),
+                ..default()
+            },
+        ));
+    }
+}
+
+fn stop_sound_item_cmd(
+    f: &str,
+    node: &utage4::Node,
+    commands: &mut Commands,
+    audio_query: &mut Query<(Entity, &VNAudio)>,
+) {
+    f32!(let fade_time = node.arg6, 0.2);
+    let audio_type = match f {
+        "StopSe" => Some(AudioType::Se),
+        "StopBgm" => Some(AudioType::Bgm),
+        "StopAmbience" => Some(AudioType::Ambience),
+        _ => None
+    };
+    audio_query.iter_mut()
+        .filter(|x| {
+            // none means all type/label
+            let type_match = audio_type.as_ref().is_none_or(|t| &x.1.0 == t);
+            let label_match = node.arg1.as_ref().is_none_or(|l| &x.1.1 == l);
+            type_match && label_match
+        }).for_each(|(entity, _)| {
+            commands.entity(entity).insert(AudioFade(fade_time));
+        }
+    )
+}
+
+fn stop_sound_cmd(
+    node: &utage4::Node,
+    commands: &mut Commands,
+    audio_query: &mut Query<(Entity, &VNAudio)>,
+) {
+    let parts = match node.arg1.as_deref() {
+        None => vec!["Bgm", "Ambience"],
+        Some("All") => vec!["All"],
+        Some(s) => s.split(',').collect(),
+    };
+    for p in parts {
+        match p {
+            "All" => {
+                stop_voice_cmd(commands, audio_query);
+                stop_sound_item_cmd("", node, commands, audio_query);
+                return
+            }
+            "Se" => stop_sound_item_cmd("StopSe", node, commands, audio_query),
+            "Bgm" => stop_sound_item_cmd("StopBgm", node, commands, audio_query),
+            "Ambience" => stop_sound_item_cmd("StopAmbience", node, commands, audio_query),
+            "Voice" => stop_voice_cmd(commands, audio_query),
+            _ => (),
+        }
+    }
+}
+
+fn voice_cmd(
+    node: &utage4::Node,
+    asset_server: &Res<AssetServer>,
+    commands: &mut Commands,
+    audio_query: &mut Query<(Entity, &VNAudio)>,
+) {
+    if let Some(voice) = &node.voice {
+        f32!(let volume = node.arg3, 1.);
+        let loop_type = match node.arg2.as_deref() {
+            Some("TRUE") => PlaybackMode::Loop,
+            _ => PlaybackMode::Despawn,
+        };
+        stop_voice_cmd(commands, audio_query);
+        commands.spawn((
+            VNAudio(AudioType::Voice, "".into()),
+            AudioPlayer::new(
+                asset_server.load(format!("{}{}.m4a", VOICE, voice))
+            ),
+            PlaybackSettings {
+                mode: loop_type,
+                volume: Volume::Linear(volume),
+                ..default()
+            },
+        ));
+    }
+}
+
+fn stop_voice_cmd(
+    commands: &mut Commands,
+    audio_query: &mut Query<(Entity, &VNAudio)>,
+) {
+    audio_query.iter_mut().filter(|x| matches!(x.1.0, AudioType::Voice)).for_each(|(entity, _)| {
+        commands.entity(entity).despawn()
+    })
 }
