@@ -35,17 +35,11 @@ macro_rules! str {
 }
 
 macro_rules! f32 {
-    (let mut $var:ident = $source:expr, $default:expr) => {
-        let mut $var = str!($source, stringify!($default)).parse::<f32>().unwrap_or($default);
-    };
-    (let $var:ident = $source:expr, $default:expr) => {
+    ($var:ident = $source:expr, $default:expr) => {
         let $var = str!($source, stringify!($default)).parse::<f32>().unwrap_or($default);
     };
     ($var:ident, $default:expr) => {
         $var.parse::<f32>().unwrap_or($default)
-    };
-    ($var:ident = $source:expr) => {
-        $var = $source.as_ref().map_or($var, |f| f.parse::<f32>().unwrap_or($var));
     };
 }
 
@@ -94,6 +88,7 @@ struct ViewRes {
     avg: bool,
     avg_nodes: Vec<utage4::Node>,
     avg_offset: usize,
+    avg_regex: Regex,
     fast: bool,
     wait_timer: Option<Timer>,
 }
@@ -137,15 +132,7 @@ impl VNText {
     }
 
     fn update(&mut self, text: &str) {
-        // <interval=???> to ..., remove other tags
-        let re = Regex::new(r"(?P<interval_tag><interval=[^>]*>)|(?P<other_tag><[^>]*>)").unwrap();
-        self.text = re.replace_all(text, |caps: &Captures| {
-            if caps.name("interval_tag").is_some() {
-                "……"
-            } else {
-                ""
-            }
-        }).into_owned();
+        self.text = text.to_string();
         self.index = 0;
         self.timer = Timer::new(VNSPEED, TimerMode::Repeating);
     }
@@ -297,17 +284,16 @@ fn setup(
     let mut events = BTreeMap::new();
     if let Ok(content) = read_to_string("assets/memory.txt") {
         for event in content.lines() {
-            if let (Some(l), Some(r)) = (event.rfind('/'), event.find('.'))
-                && l < r {
-                    let path = event[..l].to_string();
-                    let name = event[l+1..r].to_string();
-                    let ext = event[r+1..].to_string();
-                    events.insert(name.clone(), Location {
-                        path,
-                        name,
-                        ext,
-                    });
-                }
+            if let (Some(l), Some(r)) = (event.rfind('/'), event.find('.')) && l < r {
+                let path = event[..l].to_string();
+                let name = event[l+1..r].to_string();
+                let ext = event[r+1..].to_string();
+                events.insert(name.clone(), Location {
+                    path,
+                    name,
+                    ext,
+                });
+            }
         }
     }
 
@@ -320,6 +306,8 @@ fn setup(
         avg: false,
         avg_nodes: Vec::new(),
         avg_offset: 0,
+        // <interval=???> to ..., remove other tags
+        avg_regex: Regex::new(r"(?P<interval_tag><interval=[^>]*>)|(?P<other_tag><[^>]*>)").unwrap(),
         fast: false,
         wait_timer: None,
     });
@@ -577,61 +565,64 @@ fn spine_spawn(
     mut spine_query: Query<&mut Spine>,
     anime_query: Query<Entity, With<AnimeMenuList>>,
     mut spine_ready_msg: MessageReader<SpineReadyMsg>,
+    view_res: Res<ViewRes>,
 ) {
-    for msg in spine_ready_msg.read() {
-        anime_query.iter().for_each(|entity| {
-            commands.entity(entity).despawn()
-        });
-        let mut animation_list = Vec::new();
-        if let Ok(mut spine) = spine_query.get_mut(msg.entity) {
-            let Spine(SkeletonController {
-                animation_state,
-                ..
-            }) = spine.as_mut();
-            for i in animation_state.data().skeleton_data().animations() {
-                animation_list.push(i.name().to_string());
+    if !view_res.avg {
+        for msg in spine_ready_msg.read() {
+            anime_query.iter().for_each(|entity| {
+                commands.entity(entity).despawn()
+            });
+            let mut animation_list = Vec::new();
+            if let Ok(mut spine) = spine_query.get_mut(msg.entity) {
+                let Spine(SkeletonController {
+                    animation_state,
+                    ..
+                }) = spine.as_mut();
+                for i in animation_state.data().skeleton_data().animations() {
+                    animation_list.push(i.name().to_string());
+                }
             }
-        }
 
-        commands.spawn((
-            Visibility::Visible,
-            AnimeMenuList,
-            ZIndex(Z_UI),
-            Node {
-                width: Val::Percent(11.),
-                height: Val::Percent(66.),
-                left: Val::Percent(1.),
-                top: Val::Percent(1.),
-                flex_direction: FlexDirection::Column,
-                ..default()
-            },
-        )).with_children(|parent| {
-            parent.spawn((
-                Button,
-                Text::new("Select Action"),
-                TextFont {
-                    font: asset_server.load(FONT),
-                    font_size: 24.,
+            commands.spawn((
+                Visibility::Visible,
+                AnimeMenuList,
+                ZIndex(Z_UI),
+                Node {
+                    width: Val::Percent(11.),
+                    height: Val::Percent(66.),
+                    left: Val::Percent(1.),
+                    top: Val::Percent(1.),
+                    flex_direction: FlexDirection::Column,
                     ..default()
                 },
-                TextColor(HEADTEXT),
-                BackgroundColor(Color::NONE),
-            ));
-            for animation in animation_list {
+            )).with_children(|parent| {
                 parent.spawn((
                     Button,
-                    Text::new(animation),
-                    AnimeMenu,
+                    Text::new("Select Action"),
                     TextFont {
                         font: asset_server.load(FONT),
-                        font_size: 20.,
+                        font_size: 24.,
                         ..default()
                     },
-                    TextColor(LISTTEXT),
+                    TextColor(HEADTEXT),
                     BackgroundColor(Color::NONE),
                 ));
-            }
-        });
+                for animation in animation_list {
+                    parent.spawn((
+                        Button,
+                        Text::new(animation),
+                        AnimeMenu,
+                        TextFont {
+                            font: asset_server.load(FONT),
+                            font_size: 20.,
+                            ..default()
+                        },
+                        TextColor(LISTTEXT),
+                        BackgroundColor(Color::NONE),
+                    ));
+                }
+            });
+        }
     }
 }
 
@@ -747,10 +738,10 @@ fn toggle_vn(
     mut vn_msg: MessageWriter<VNMsg>,
 ) {
     if let Some(msg) = vn_ui_msg.read().last() {
+        spine_query.iter().for_each(|entity| {
+            commands.entity(entity).despawn()
+        });
         if msg.0 {
-            spine_query.iter().for_each(|entity| {
-                commands.entity(entity).despawn()
-            });
             for mut v in &mut viewer_ui {
                 *v = Visibility::Hidden
             }
@@ -908,6 +899,7 @@ fn play_vn(
     mut audio_query: Query<(Entity, &AudioSink, &VNAudio)>,
     mut vn_msg: MessageReader<VNMsg>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
+    mut skeletons: ResMut<Assets<SkeletonData>>,
     mut view_res: ResMut<ViewRes>,
 ) {
     if vn_msg.read().last().is_some() {
@@ -920,30 +912,80 @@ fn play_vn(
                 info!("{:?}", node);
                 match node.command.as_ref().map(|s| &s[..]) {
                     None => {
+                        let char_name = str!(node.arg1);
+                        vn_char.0 = char_name.to_string();
                         if let Some(t) = &node.text {
-                            vn_text.update(t);
+                            let text = view_res.avg_regex.replace_all(t, |caps: &Captures| {
+                                if caps.name("interval_tag").is_some() {
+                                    "……"
+                                } else {
+                                    ""
+                                }
+                            }).into_owned();
+                            vn_text.update(&text);
                             vn_ui.iter_mut().for_each(|mut v| {
                                 *v = Visibility::Visible
                             });
-                            let char_name = str!(node.arg1);
-                            vn_char.0 = char_name.to_string();
-                            if let Some(voice) = &node.voice {
-                                stop_voice_cmd(&mut commands, &mut audio_query);
-                                commands.spawn((
-                                    VNAudio(AudioType::Voice, "".into()),
-                                    AudioPlayer::new(
-                                        asset_server.load(format!("{}{}.m4a", VOICE, voice))
-                                    ),
-                                    PlaybackSettings {
-                                        mode: PlaybackMode::Despawn,
-                                        volume: Volume::Linear(1.),
-                                        ..default()
-                                    },
-                                ));
-                            }
-                            view_res.avg_offset += 1;
-                            break;
                         }
+                        if let Some(character) = view_res.vn.character.get(char_name) {
+                            info!("load chara {:?}", character);
+                            let layer = view_res.vn.layer.get(str!(node.arg3));
+                            // command arg > character > layer > preset
+                            f32!(x = (node.arg4.as_deref().or(character.x.as_deref())
+                                .or_else(|| layer.and_then(|l| l.x.as_deref()))), 0.);
+                            f32!(y = (node.arg5.as_deref().or(character.y.as_deref())
+                                .or_else(|| layer.and_then(|l| l.y.as_deref()))), 0.);
+                            f32!(z = (character.z.as_deref())
+                                .or_else(|| layer.and_then(|l| l.order.as_deref())), 0.);
+                            f32!(scale_x = (character.scale.as_deref())
+                                .or_else(|| layer.and_then(|l| l.scale_x.as_deref())), 0.5);
+                            f32!(scale_y = (character.scale.as_deref())
+                                .or_else(|| layer.and_then(|l| l.scale_y.as_deref())), 0.5);
+                            let file_name = str!(character.file_name);
+                            if let (Some(l), Some(r)) = (file_name.rfind('/'), file_name.rfind('.')) && l < r {
+                                let path = file_name[..l].to_string();
+                                if let Some(rr) = path.rfind('/') {
+                                    let bundle_name = path[rr+1..].to_string();
+                                    if let Some(file) = view_res.spines.get(&bundle_name) {
+                                        let skeleton = if file.ext == "skel" {
+                                            SkeletonData::new_from_binary(
+                                                asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
+                                                asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
+                                            )
+                                        } else {
+                                            SkeletonData::new_from_json(
+                                                asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
+                                                asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
+                                            )
+                                        };
+                                        let skeleton_handle = skeletons.add(skeleton);
+                                        commands.spawn(SpineBundle {
+                                            skeleton: skeleton_handle.clone().into(),
+                                            transform: Transform::from_xyz(x, y, z as f32).
+                                                with_scale(Vec3::new(scale_x, scale_y, 1.)),
+                                            ..Default::default()
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                        if let Some(voice) = &node.voice {
+                            stop_voice_cmd(&mut commands, &mut audio_query);
+                            info!("play voice {}", voice);
+                            commands.spawn((
+                                VNAudio(AudioType::Voice, "".into()),
+                                AudioPlayer::new(
+                                    asset_server.load(format!("{}{}.m4a", VOICE, voice))
+                                ),
+                                PlaybackSettings {
+                                    mode: PlaybackMode::Despawn,
+                                    volume: Volume::Linear(1.),
+                                    ..default()
+                                },
+                            ));
+                        }
+                        view_res.avg_offset += 1;
+                        break;
                     }
                     Some(f @ "FadeOut") | Some(f @ "FadeIn") => {
                         fade_overlay_cmd(f, node, &mut commands);
@@ -976,7 +1018,7 @@ fn play_vn(
                         stop_sound_cmd(node, &mut commands, &mut audio_query);
                     }
                     Some("Wait") => {
-                        f32!(let t = node.arg6, 0.1);
+                        f32!(t = node.arg6, 0.1);
                         view_res.wait_timer = Some(Timer::from_seconds(t, TimerMode::Once));
                         view_res.avg_offset += 1;
                         break;
@@ -1051,23 +1093,12 @@ fn img_cmd(
             "Sprite" => (SPRITE, 1.),
             _ => return
         };
-        let (mut x, mut y, mut z, mut scale_x, mut scale_y) = (0., 0., 0., 1., 1.);
-        // command > texture > label
-        if let Some(layer) = layer {
-            f32!(x = layer.x);
-            f32!(y = layer.y);
-            f32!(z = layer.order);
-            f32!(scale_x = layer.scale_x);
-            f32!(scale_y = layer.scale_y);
-        }
-        f32!(x = texture.x);
-        f32!(y = texture.y);
-        f32!(z = texture.z);
-        f32!(scale_x = texture.scale);
-        f32!(scale_y = texture.scale);
-        f32!(x = node.arg4);
-        f32!(y = node.arg5);
-        info!("draw texture {} with layer {:?}", label_name, node.arg3);
+        // command arg > texture > layer > preset
+        f32!(x = (node.arg4.as_deref().or(texture.x.as_deref()).or_else(|| layer.and_then(|l| l.x.as_deref()))), 0.);
+        f32!(y = (node.arg5.as_deref().or(texture.y.as_deref()).or_else(|| layer.and_then(|l| l.y.as_deref()))), 0.);
+        f32!(z = (texture.z.as_deref()).or_else(|| layer.and_then(|l| l.order.as_deref())), 0.);
+        f32!(scale_x = (texture.scale.as_deref()).or_else(|| layer.and_then(|l| l.scale_x.as_deref())), 1.);
+        f32!(scale_y = (texture.scale.as_deref()).or_else(|| layer.and_then(|l| l.scale_y.as_deref())), 1.);
         commands.spawn((
             Sprite {
                 image: asset_server.load(format!("{}{}", img_path, str!(texture.file_name))),
@@ -1145,8 +1176,7 @@ fn sound_cmd(
 ) {
     let sound = view_res.vn.sound.get(str!(node.arg1));
     if let Some(sound) = sound {
-        f32!(let mut volume = sound.volume, 1.);
-        f32!(volume = node.arg3);
+        f32!(volume = (node.arg3.as_deref()).or(sound.volume.as_deref()), 1.);
         let file = str!(sound.file_name);
         let (audio_path, audio_type, mut loop_type) = match f {
             "Se" => (SE, AudioType::Se, PlaybackMode::Despawn),
@@ -1161,7 +1191,7 @@ fn sound_cmd(
         }
         // fade out previous bgm or ambience
         if matches!(audio_type, AudioType::Bgm | AudioType::Ambience) {
-            f32!(let fade_time = node.arg5, 0.2);
+            f32!(fade_time = node.arg5, 0.2);
             audio_query.iter_mut()
                 .filter(|x| x.2.0 == audio_type)
                 .for_each(|(entity, sink, vn)| {
@@ -1196,7 +1226,7 @@ fn stop_sound_item_cmd(
     audio_query: &mut Query<(Entity, &AudioSink, &VNAudio)>,
     ignore_label: bool,
 ) {
-    f32!(let fade_time = node.arg6, 0.2);
+    f32!(fade_time = node.arg6, 0.2);
     let audio_type = match f {
         "StopSe" => Some(AudioType::Se),
         "StopBgm" => Some(AudioType::Bgm),
@@ -1256,7 +1286,7 @@ fn voice_cmd(
     audio_query: &mut Query<(Entity, &AudioSink, &VNAudio)>,
 ) {
     if let Some(voice) = &node.voice {
-        f32!(let volume = node.arg3, 1.);
+        f32!(volume = node.arg3, 1.);
         let loop_type = match node.arg2.as_deref() {
             Some("TRUE") => PlaybackMode::Loop,
             _ => PlaybackMode::Despawn,
