@@ -527,16 +527,16 @@ fn choose_scene(
             Interaction::Pressed => {
                 let bundle_name = &text.to_string();
                 if view_res.mode == ListMode::Memory {
-                    if let Some(file) = view_res.events.get(bundle_name)
-                        && let Ok(content) = read_to_string(format!("assets/{}/{}.{}", file.path, file.name, file.ext)) {
-                            let book = utage4::parse_book(content);
-                            view_res.avg = true;
-                            view_res.avg_nodes = book;
-                            view_res.avg_offset = 0;
-                            view_res.wait_timer = None;
-                            view_res.fast = false;
-                            vn_ui_msg.write(VNToogleMsg(true));
-                        }
+                    if let Some(file) = view_res.events.get(bundle_name) && let Ok(content) =
+                            read_to_string(format!("assets/{}/{}.{}", file.path, file.name, file.ext)) {
+                        let book = utage4::parse_book(content);
+                        view_res.avg = true;
+                        view_res.avg_nodes = book;
+                        view_res.avg_offset = 0;
+                        view_res.wait_timer = None;
+                        view_res.fast = false;
+                        vn_ui_msg.write(VNToogleMsg(true));
+                    }
                 } else if let Some(file) = view_res.spines.get(bundle_name) {
                     let skeleton = if file.ext == "skel" {
                         SkeletonData::new_from_binary(
@@ -952,7 +952,7 @@ fn play_vn(
                         sound_cmd(f, node, &asset_server, &mut commands, &mut audio_query, &view_res);
                     }
                     Some(f @ "StopSe") | Some(f @ "StopBgm") | Some(f @ "StopAmbience") => {
-                        stop_sound_item_cmd(f, node, &mut commands, &mut audio_query);
+                        stop_sound_item_cmd(f, node, &mut commands, &mut audio_query, false);
                     }
                     Some("Voice") => {
                         voice_cmd(node, &asset_server, &mut commands, &mut audio_query);
@@ -1118,6 +1118,7 @@ fn stop_sound_item_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
     audio_query: &mut Query<(Entity, &VNAudio)>,
+    ignore_label: bool,
 ) {
     f32!(let fade_time = node.arg6, 0.2);
     let audio_type = match f {
@@ -1130,7 +1131,7 @@ fn stop_sound_item_cmd(
         .filter(|x| {
             // none means all type/label
             let type_match = audio_type.as_ref().is_none_or(|t| &x.1.0 == t);
-            let label_match = node.arg1.as_ref().is_none_or(|l| &x.1.1 == l);
+            let label_match = ignore_label | node.arg1.as_ref().is_none_or(|l| &x.1.1 == l);
             type_match && label_match
         }).for_each(|(entity, _)| {
             commands.entity(entity).insert(AudioFade(fade_time));
@@ -1148,16 +1149,20 @@ fn stop_sound_cmd(
         Some("All") => vec!["All"],
         Some(s) => s.split(',').collect(),
     };
+    if parts.len() > 4 {
+        warn!("Ignore weird stop sound command {:?}", parts);
+        return
+    }
     for p in parts {
         match p {
             "All" => {
                 stop_voice_cmd(commands, audio_query);
-                stop_sound_item_cmd("", node, commands, audio_query);
+                stop_sound_item_cmd("", node, commands, audio_query, true);
                 return
             }
-            "Se" => stop_sound_item_cmd("StopSe", node, commands, audio_query),
-            "Bgm" => stop_sound_item_cmd("StopBgm", node, commands, audio_query),
-            "Ambience" => stop_sound_item_cmd("StopAmbience", node, commands, audio_query),
+            "Se" => stop_sound_item_cmd("StopSe", node, commands, audio_query, true),
+            "Bgm" => stop_sound_item_cmd("StopBgm", node, commands, audio_query, true),
+            "Ambience" => stop_sound_item_cmd("StopAmbience", node, commands, audio_query, true),
             "Voice" => stop_voice_cmd(commands, audio_query),
             _ => (),
         }
