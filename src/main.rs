@@ -28,6 +28,10 @@ const Z_CG: i32 = 300;
 const Z_UI: i32 = 993;
 const Z_TEXT: i32 = 996;
 const Z_FADE: i32 = 999;
+const BG_SCALE: f32 = 1.725;
+const EVENT_SCALE: f32 = 1.35;
+const SPRITE_SCALE: f32 = 1.;
+const SPINE_SCALE: f32 = 1.5;
 
 macro_rules! str {
     ($var:expr) => { $var.as_deref().unwrap_or("") };
@@ -185,6 +189,9 @@ enum TextureType {
 #[derive(Component)]
 struct VNTexture(TextureType, String, String);
 
+#[derive(Component)]
+struct VNSpine(String, String);
+
 #[derive(PartialEq)]
 enum AudioType {
     Bgm,
@@ -243,6 +250,7 @@ fn main() {
             toggle_vn,
             play_vn,
             vn_dialogue,
+            vn_spine_spawn.in_set(SpineSet::OnReady),
             fade_overlay,
             fade_sound,
             check_wait,
@@ -562,12 +570,12 @@ fn choose_scene(
 fn spine_spawn(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut spine_query: Query<&mut Spine>,
+    mut spine_query: Query<&mut Spine, Without<VNSpine>>,
     anime_query: Query<Entity, With<AnimeMenuList>>,
     mut spine_ready_msg: MessageReader<SpineReadyMsg>,
     view_res: Res<ViewRes>,
 ) {
-    if !view_res.avg {
+    if view_res.mode != ListMode::Memory {
         for msg in spine_ready_msg.read() {
             anime_query.iter().for_each(|entity| {
                 commands.entity(entity).despawn()
@@ -634,7 +642,7 @@ fn choose_animation(
         &mut BackgroundColor,
         &AnimeMenu,
     ), (Changed<Interaction>, With<Button>),>,
-    mut spine_query: Query<&mut Spine>,
+    mut spine_query: Query<&mut Spine, Without<VNSpine>>,
 ) {
     interaction_query.iter_mut().for_each(|(interaction, text, mut color, mut bg_color, _)| {
         match *interaction {
@@ -889,6 +897,17 @@ fn fade_sound(
     }
 }
 
+fn vn_spine_spawn(
+    mut spine_query: Query<(&mut Spine, &VNSpine)>,
+    mut spine_ready_msg: MessageReader<SpineReadyMsg>,
+) {
+    for msg in spine_ready_msg.read() {
+        if let Ok((mut spine, s)) = spine_query.get_mut(msg.entity) {
+            let _ = spine.animation_state.set_animation_by_name(0, &s.1, true);
+        }
+    }
+}
+
 fn play_vn(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -897,6 +916,7 @@ fn play_vn(
     mut vn_ui: Query<&mut Visibility, With<VNGui>>,
     mut texture_query: Query<(Entity, &VNTexture)>,
     mut audio_query: Query<(Entity, &AudioSink, &VNAudio)>,
+    mut spine_query: Query<(&mut Spine, &mut VNSpine)>,
     mut vn_msg: MessageReader<VNMsg>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
     mut skeletons: ResMut<Assets<SkeletonData>>,
@@ -913,6 +933,7 @@ fn play_vn(
                 match node.command.as_ref().map(|s| &s[..]) {
                     None => {
                         let char_name = str!(node.arg1);
+                        let motion = str!(node.arg2);
                         vn_char.0 = char_name.to_string();
                         if let Some(t) = &node.text {
                             let text = view_res.avg_regex.replace_all(t, |caps: &Captures| {
@@ -928,43 +949,51 @@ fn play_vn(
                             });
                         }
                         if let Some(character) = view_res.vn.character.get(char_name) {
-                            info!("load chara {:?}", character);
-                            let layer = view_res.vn.layer.get(str!(node.arg3));
-                            // command arg > character > layer > preset
-                            f32!(x = (node.arg4.as_deref().or(character.x.as_deref())
-                                .or_else(|| layer.and_then(|l| l.x.as_deref()))), 0.);
-                            f32!(y = (node.arg5.as_deref().or(character.y.as_deref())
-                                .or_else(|| layer.and_then(|l| l.y.as_deref()))), 0.);
-                            f32!(z = (character.z.as_deref())
-                                .or_else(|| layer.and_then(|l| l.order.as_deref())), 0.);
-                            f32!(scale_x = (character.scale.as_deref())
-                                .or_else(|| layer.and_then(|l| l.scale_x.as_deref())), 0.5);
-                            f32!(scale_y = (character.scale.as_deref())
-                                .or_else(|| layer.and_then(|l| l.scale_y.as_deref())), 0.5);
-                            let file_name = str!(character.file_name);
-                            if let (Some(l), Some(r)) = (file_name.rfind('/'), file_name.rfind('.')) && l < r {
-                                let path = file_name[..l].to_string();
-                                if let Some(rr) = path.rfind('/') {
-                                    let bundle_name = path[rr+1..].to_string();
-                                    if let Some(file) = view_res.spines.get(&bundle_name) {
-                                        let skeleton = if file.ext == "skel" {
-                                            SkeletonData::new_from_binary(
-                                                asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
-                                                asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
-                                            )
-                                        } else {
-                                            SkeletonData::new_from_json(
-                                                asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
-                                                asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
-                                            )
-                                        };
-                                        let skeleton_handle = skeletons.add(skeleton);
-                                        commands.spawn(SpineBundle {
-                                            skeleton: skeleton_handle.clone().into(),
-                                            transform: Transform::from_xyz(x, y, z as f32).
-                                                with_scale(Vec3::new(scale_x, scale_y, 1.)),
-                                            ..Default::default()
-                                        });
+                            let mut spine_spawned = false;
+                            spine_query.iter_mut().for_each(|(mut spine, mut s)| {
+                                if s.0 == char_name {
+                                    spine_spawned = true;
+                                    s.1 = motion.to_string();
+                                    let _ = spine.animation_state.set_animation_by_name(0, motion, true);
+                                }
+                            });
+                            if !spine_spawned {
+                                info!("load chara {:?}", character);
+                                let layer = view_res.vn.layer.get(str!(node.arg3));
+                                // command arg +  (layer > character > preset)
+                                f32!(x = layer.and_then(|l| l.x.as_deref()).or(character.x.as_deref()), 0.);
+                                f32!(y = layer.and_then(|l| l.y.as_deref()).or(character.y.as_deref()), 0.);
+                                f32!(z = layer.and_then(|l| l.order.as_deref()).or(character.z.as_deref()), 0.);
+                                f32!(scale_x = layer.and_then(|l| l.scale_x.as_deref()).or(character.scale.as_deref()), 1.);
+                                f32!(scale_y = layer.and_then(|l| l.scale_y.as_deref()).or(character.scale.as_deref()), 1.);
+                                let (off_x, off_y) = (str!(node.arg4), str!(node.arg5));
+                                let file_name = str!(character.file_name);
+                                if let (Some(l), Some(r)) = (file_name.rfind('/'), file_name.rfind('.')) && l < r {
+                                    let path = file_name[..l].to_string();
+                                    if let Some(rr) = path.rfind('/') {
+                                        let bundle_name = path[rr+1..].to_string();
+                                        if let Some(file) = view_res.spines.get(&bundle_name) {
+                                            let skeleton = if file.ext == "skel" {
+                                                SkeletonData::new_from_binary(
+                                                    asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
+                                                    asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
+                                                )
+                                            } else {
+                                                SkeletonData::new_from_json(
+                                                    asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
+                                                    asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
+                                                )
+                                            };
+                                            let skeleton_handle = skeletons.add(skeleton);
+                                            let entity = commands.spawn(SpineBundle {
+                                                skeleton: skeleton_handle.clone().into(),
+                                                transform: Transform::from_xyz((x + f32!(off_x, 0.)) * SPINE_SCALE, y + f32!(off_y, 0.), z)
+                                                    .with_scale(Vec3::new(scale_x * SPINE_SCALE, scale_y * SPINE_SCALE, 1.)),
+                                                ..Default::default()
+                                            }).id();
+                                            commands.entity(entity).insert(
+                                                VNSpine(char_name.to_string(), motion.to_string()));
+                                        }
                                     }
                                 }
                             }
@@ -1088,24 +1117,26 @@ fn img_cmd(
             _ => f,
         };
         let (img_path, scale_factor) = match texture_type {
-            "Bg" => (BG, 1.725),
-            "BgEvent" => (EVENT, 1.35),
-            "Sprite" => (SPRITE, 1.),
+            "Bg" => (BG, BG_SCALE),
+            "BgEvent" => (EVENT, EVENT_SCALE),
+            "Sprite" => (SPRITE, SPRITE_SCALE),
             _ => return
         };
-        // command arg > texture > layer > preset
+        // command arg +  (texture > layer > preset)
         f32!(x = (node.arg4.as_deref().or(texture.x.as_deref()).or_else(|| layer.and_then(|l| l.x.as_deref()))), 0.);
         f32!(y = (node.arg5.as_deref().or(texture.y.as_deref()).or_else(|| layer.and_then(|l| l.y.as_deref()))), 0.);
         f32!(z = (texture.z.as_deref()).or_else(|| layer.and_then(|l| l.order.as_deref())), 0.);
         f32!(scale_x = (texture.scale.as_deref()).or_else(|| layer.and_then(|l| l.scale_x.as_deref())), 1.);
         f32!(scale_y = (texture.scale.as_deref()).or_else(|| layer.and_then(|l| l.scale_y.as_deref())), 1.);
+        let (off_x, off_y) = (str!(node.arg4), str!(node.arg5));
         commands.spawn((
             Sprite {
                 image: asset_server.load(format!("{}{}", img_path, str!(texture.file_name))),
                 ..default()
             },
             VNTexture(real_type, str!(node.arg1).into(), str!(node.arg3).into()),
-            Transform::from_xyz(x, y, z).with_scale(Vec3::new(scale_x * scale_factor, scale_y * scale_factor, 1.)),
+            Transform::from_xyz((x + f32!(off_x, 0.)) * scale_factor, (y + f32!(off_y, 0.)) * scale_factor, z)
+                .with_scale(Vec3::new(scale_x * scale_factor, scale_y * scale_factor, 1.)),
         ));
     }
 }
