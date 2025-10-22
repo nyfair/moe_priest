@@ -10,7 +10,7 @@ use bevy::window::{PrimaryWindow, WindowMode};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
 use regex::{Regex, Captures};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::read_to_string;
 use std::time::Duration;
 
@@ -95,6 +95,7 @@ struct ViewRes {
     avg_regex: Regex,
     fast: bool,
     wait_timer: Option<Timer>,
+    params: HashMap<String, String>
 }
 
 #[derive(Component)]
@@ -317,10 +318,11 @@ fn setup(
         avg: false,
         avg_nodes: Vec::new(),
         avg_offset: 0,
-        // <interval=???> to ..., remove other tags
-        avg_regex: Regex::new(r"(?P<interval_tag><interval=[^>]*>)|(?P<other_tag><[^>]*>)").unwrap(),
+        // <interval=???> to ..., <interval=???> for param matching, remove other tags
+        avg_regex: Regex::new(r"(?P<interval><interval=[^>]*>)|(?P<param><param=[^>]*>)|(?P<other><[^>]*>)").unwrap(),
         fast: false,
         wait_timer: None,
+        params: HashMap::new(),
     });
 
     commands.spawn((
@@ -567,7 +569,7 @@ fn choose_scene(
                 *bg_color = Color::NONE.into();
             }
         }
-    })
+    });
 }
 
 fn spine_spawn(
@@ -743,13 +745,13 @@ fn toggle_vn(
     mut vn_ui: Query<&mut Visibility, With<VNGui>>,
     mut text: Single<&mut Text, With<VNText>>,
     mut vn_text: Single<&mut VNText>,
-    spine_query: Query<Entity, With<Spine>>,
-    despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<VNTexture>)>>,
+    despawn_query: Query<Entity, Or<(With<Spine>, With<AnimeMenuList>)>>,
+    vn_despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<VNTexture>, (With<VNAudio>, Without<AudioFade>))>>,
     mut vn_ui_msg: MessageReader<VNToogleMsg>,
     mut vn_msg: MessageWriter<VNMsg>,
 ) {
     if let Some(msg) = vn_ui_msg.read().last() {
-        spine_query.iter().for_each(|entity| {
+        despawn_query.iter().for_each(|entity| {
             commands.entity(entity).despawn()
         });
         if msg.0 {
@@ -760,7 +762,7 @@ fn toggle_vn(
         } else {
             text.0 = String::new();
             vn_text.text = String::new();
-            despawn_query.iter().for_each(|entity| {
+            vn_despawn_query.iter().for_each(|entity| {
                 commands.entity(entity).despawn()
             });
             vn_ui.iter_mut().for_each(|mut v| {
@@ -935,90 +937,11 @@ fn play_vn(
                 info!("{:?}", node);
                 match node.command.as_ref().map(|s| &s[..]) {
                     None => {
-                        let char_name = str!(node.arg1);
-                        let motion = str!(node.arg2);
-                        vn_char.0 = char_name.into();
-                        if let Some(t) = &node.text {
-                            let text = view_res.avg_regex.replace_all(t, |caps: &Captures| {
-                                if caps.name("interval_tag").is_some() {
-                                    "……"
-                                } else {
-                                    ""
-                                }
-                            }).into_owned();
-                            vn_text.update(&text);
-                            vn_ui.iter_mut().for_each(|mut v| {
-                                *v = Visibility::Visible
-                            });
+                        if default_cmd(node, &asset_server, &mut commands, &mut vn_char, &mut vn_text, &mut vn_ui,
+                            &mut audio_query, &mut spine_query, &mut skeletons, &view_res) {
+                            view_res.avg_offset += 1;
+                            break;
                         }
-                        if let Some(character) = view_res.vn.character.get(char_name) {
-                            let mut spine_spawned = false;
-                            spine_query.iter_mut().for_each(|(_, mut spine, mut s)| {
-                                if s.0 == char_name {
-                                    spine_spawned = true;
-                                    s.1 = motion.into();
-                                    let _ = spine.animation_state.set_animation_by_name(0, motion, true);
-                                }
-                            });
-                            if !spine_spawned {
-                                info!("load chara {:?}", character);
-                                let layer = view_res.vn.layer.get(str!(node.arg3));
-                                // command arg + (layer > character > preset)
-                                f32!(x = layer.and_then(|l| l.x.as_deref()).or(character.x.as_deref()), 0.);
-                                f32!(y = layer.and_then(|l| l.y.as_deref()).or(character.y.as_deref()), 0.);
-                                f32!(z = layer.and_then(|l| l.order.as_deref()).or(character.z.as_deref()), 0.);
-                                f32!(scale_x = layer.and_then(|l| l.scale_x.as_deref()).or(character.scale.as_deref()), 1.);
-                                f32!(scale_y = layer.and_then(|l| l.scale_y.as_deref()).or(character.scale.as_deref()), 1.);
-                                let (off_x, off_y) = (str!(node.arg4), str!(node.arg5));
-                                let file_name = str!(character.file_name);
-                                if let (Some(l), Some(r)) = (file_name.rfind('/'), file_name.rfind('.')) && l < r {
-                                    let path = file_name[..l].to_string();
-                                    if let Some(rr) = path.rfind('/') {
-                                        let bundle_name = path[rr+1..].to_string();
-                                        if let Some(file) = view_res.spines.get(&bundle_name) {
-                                            let skeleton = if file.ext == "skel" {
-                                                SkeletonData::new_from_binary(
-                                                    asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
-                                                    asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
-                                                )
-                                            } else {
-                                                SkeletonData::new_from_json(
-                                                    asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
-                                                    asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
-                                                )
-                                            };
-                                            let skeleton_handle = skeletons.add(skeleton);
-                                            let entity = commands.spawn(SpineBundle {
-                                                skeleton: skeleton_handle.clone().into(),
-                                                // ignore y axis scale
-                                                transform: Transform::from_xyz((x + f32!(off_x, 0.)) * SPINE_SCALE, y + f32!(off_y, 0.), z)
-                                                    .with_scale(Vec3::new(scale_x * SPINE_SCALE, scale_y * SPINE_SCALE, 1.)),
-                                                ..Default::default()
-                                            }).id();
-                                            commands.entity(entity).insert(
-                                                VNSpine(char_name.into(), motion.into(), str!(node.arg3).into()));
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        if let Some(voice) = &node.voice {
-                            stop_voice_cmd(&mut commands, &mut audio_query);
-                            info!("play voice {}", voice);
-                            commands.spawn((
-                                VNAudio(AudioType::Voice, "".into()),
-                                AudioPlayer::new(
-                                    asset_server.load(format!("{}{}.m4a", VOICE, voice))
-                                ),
-                                PlaybackSettings {
-                                    mode: PlaybackMode::Despawn,
-                                    volume: Volume::Linear(1.),
-                                    ..default()
-                                },
-                            ));
-                        }
-                        view_res.avg_offset += 1;
-                        break;
                     }
                     Some("CharacterOff") => {
                         character_off_cmd(node, &mut commands, &mut spine_query, true);
@@ -1075,6 +998,113 @@ fn play_vn(
             })
         }
     }
+}
+
+fn default_cmd(
+    node: &utage4::Node,
+    asset_server: &Res<AssetServer>,
+    commands: &mut Commands,
+    vn_char: &mut Single<&mut Text, With<VNChar>>,
+    vn_text: &mut Single<&mut VNText>,
+    vn_ui: &mut Query<&mut Visibility, With<VNGui>>,
+    audio_query: &mut Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine)>,
+    skeletons: &mut ResMut<Assets<SkeletonData>>,
+    view_res: &ResMut<ViewRes>,
+) -> bool {
+    let mut wait = false;
+    // dialogue text
+    if let Some(t) = &node.text {
+        let text = view_res.avg_regex.replace_all(t, |caps: &Captures| {
+            if caps.name("interval").is_some() {
+                "……"
+            } else {
+                ""
+            }
+        }).into_owned();
+        vn_text.update(&text);
+        vn_ui.iter_mut().for_each(|mut v| {
+            *v = Visibility::Visible
+        });
+        wait = true;
+    } else {
+        vn_ui.iter_mut().for_each(|mut v| {
+            *v = Visibility::Hidden
+        });
+    }
+    // play voice
+    if let Some(voice) = &node.voice {
+        stop_voice_cmd(commands, audio_query);
+        info!("play voice {}", voice);
+        commands.spawn((
+            VNAudio(AudioType::Voice, "".into()),
+            AudioPlayer::new(
+                asset_server.load(format!("{}{}.m4a", VOICE, voice))
+            ),
+            PlaybackSettings {
+                mode: PlaybackMode::Despawn,
+                volume: Volume::Linear(1.),
+                ..default()
+            },
+        ));
+    }
+    // draw character and update dialogue character name
+    let char_name = str!(node.arg1);
+    if let (Some(character), Some(motion)) = (view_res.vn.character.get(char_name), node.arg2.as_deref()) {
+        vn_char.0 = view_res.params.get(char_name).map(|s| s.to_string()).unwrap_or(char_name.into());
+        let mut spine_spawned = false;
+        spine_query.iter_mut().for_each(|(_, mut spine, mut s)| {
+            if s.0 == char_name {
+                spine_spawned = true;
+                s.1 = motion.into();
+                let _ = spine.animation_state.set_animation_by_name(0, motion, true);
+            }
+        });
+        if !spine_spawned {
+            info!("load chara {:?}", character);
+            let layer = view_res.vn.layer.get(str!(node.arg3));
+            // command arg + (layer > character > preset)
+            f32!(x = layer.and_then(|l| l.x.as_deref()).or(character.x.as_deref()), 0.);
+            f32!(y = layer.and_then(|l| l.y.as_deref()).or(character.y.as_deref()), 0.);
+            f32!(z = layer.and_then(|l| l.order.as_deref()).or(character.z.as_deref()), 0.);
+            f32!(scale_x = layer.and_then(|l| l.scale_x.as_deref()).or(character.scale.as_deref()), 1.);
+            f32!(scale_y = layer.and_then(|l| l.scale_y.as_deref()).or(character.scale.as_deref()), 1.);
+            let (off_x, off_y) = (str!(node.arg4), str!(node.arg5));
+            let file_name = str!(character.file_name);
+            if let (Some(l), Some(r)) = (file_name.rfind('/'), file_name.rfind('.')) && l < r {
+                let path = file_name[..l].to_string();
+                if let Some(rr) = path.rfind('/') {
+                    let bundle_name = path[rr+1..].to_string();
+                    if let Some(file) = view_res.spines.get(&bundle_name) {
+                        let skeleton = if file.ext == "skel" {
+                            SkeletonData::new_from_binary(
+                                asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
+                                asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
+                            )
+                        } else {
+                            SkeletonData::new_from_json(
+                                asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
+                                asset_server.load(format!("{}/{}.atlas", file.path, file.name)),
+                            )
+                        };
+                        let skeleton_handle = skeletons.add(skeleton);
+                        let entity = commands.spawn(SpineBundle {
+                            skeleton: skeleton_handle.clone().into(),
+                            // ignore y axis scale
+                            transform: Transform::from_xyz((x + f32!(off_x, 0.)) * SPINE_SCALE, y + f32!(off_y, 0.), z)
+                                .with_scale(Vec3::new(scale_x * SPINE_SCALE, scale_y * SPINE_SCALE, 1.)),
+                            ..Default::default()
+                        }).id();
+                        commands.entity(entity).insert(
+                            VNSpine(char_name.into(), motion.into(), str!(node.arg3).into()));
+                    }
+                }
+            }
+        }
+    } else {
+        vn_char.0 = char_name.into();
+    }
+    wait
 }
 
 fn fade_overlay_cmd(
