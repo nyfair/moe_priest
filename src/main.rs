@@ -254,12 +254,11 @@ fn main() {
             toggle_vn,
             play_vn,
             vn_dialogue,
-            vn_spine_spawn.in_set(SpineSet::OnReady),
             fade_overlay,
             fade_sound,
             check_wait,
         ))
-        .add_systems(FixedUpdate, (mouse_scroll, mouse_spine_move))
+        .add_systems(FixedUpdate, (mouse_scroll, mouse_object_move))
         .run();
 }
 
@@ -318,7 +317,7 @@ fn setup(
         avg: false,
         avg_nodes: Vec::new(),
         avg_offset: 0,
-        // <interval=???> to ..., <interval=???> for param matching, remove other tags
+        // <interval=???> to ..., <param=???> for param matching, remove other tags
         avg_regex: Regex::new(r"(?P<interval><interval=[^>]*>)|(?P<param><param=[^>]*>)|(?P<other><[^>]*>)").unwrap(),
         fast: false,
         wait_timer: None,
@@ -576,6 +575,7 @@ fn spine_spawn(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut spine_query: Query<&mut Spine, Without<VNSpine>>,
+    mut vn_spine_query: Query<(&mut Spine, &VNSpine)>,
     anime_query: Query<Entity, With<AnimeMenuList>>,
     mut spine_ready_msg: MessageReader<SpineReadyMsg>,
     view_res: Res<ViewRes>,
@@ -635,6 +635,12 @@ fn spine_spawn(
                     ));
                 }
             });
+        }
+    } else if view_res.avg {
+        for msg in spine_ready_msg.read() {
+            if let Ok((mut spine, s)) = vn_spine_query.get_mut(msg.entity) {
+                let _ = spine.animation_state.set_animation_by_name(0, &s.1, true);
+            }
         }
     }
 }
@@ -806,8 +812,8 @@ fn mouse_scroll(
     }
 }
 
-fn mouse_spine_move(
-    mut spine_query: Query<&mut Transform, Or<(With<Spine>, With<VNTexture>)>>,
+fn mouse_object_move(
+    mut object_query: Query<&mut Transform, Or<(With<Spine>, With<VNTexture>)>>,
     mut motion: MessageReader<MouseMotion>,
     button: Res<ButtonInput<MouseButton>>,
     time: Res<Time>,
@@ -815,9 +821,9 @@ fn mouse_spine_move(
     if button.pressed(MouseButton::Middle) {
         let delta_secs = time.delta_secs();
         for ev in motion.read() {
-            spine_query.iter_mut().for_each(|mut spine| {
-                spine.translation.x += ev.delta.x * 6. * delta_secs;
-                spine.translation.y -= ev.delta.y * 6. * delta_secs;
+            object_query.iter_mut().for_each(|mut obj| {
+                obj.translation.x += ev.delta.x * 6. * delta_secs;
+                obj.translation.y -= ev.delta.y * 6. * delta_secs;
             })
         }
     }
@@ -898,17 +904,6 @@ fn fade_sound(
             sink.set_volume(
                 fade.1.fade_towards(Volume::Linear(0.), fade.0.fraction()),
             );
-        }
-    }
-}
-
-fn vn_spine_spawn(
-    mut spine_query: Query<(&mut Spine, &VNSpine)>,
-    mut spine_ready_msg: MessageReader<SpineReadyMsg>,
-) {
-    for msg in spine_ready_msg.read() {
-        if let Ok((mut spine, s)) = spine_query.get_mut(msg.entity) {
-            let _ = spine.animation_state.set_animation_by_name(0, &s.1, true);
         }
     }
 }
