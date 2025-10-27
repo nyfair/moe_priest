@@ -534,6 +534,7 @@ fn choose_scene(
                         view_res.avg_nodes = book;
                         view_res.avg_offset = 0;
                         view_res.fast = false;
+                        view_res.params = HashMap::new();
                         vn_ui_msg.write(VNToogleMsg(true));
                     }
                 } else if let Some(file) = view_res.spines.get(bundle_name) {
@@ -577,6 +578,7 @@ fn spine_spawn(
     mut spine_query: Query<&mut Spine, Without<VNSpine>>,
     mut vn_spine_query: Query<(&mut Spine, &VNSpine)>,
     anime_query: Query<Entity, With<AnimeMenuList>>,
+    mut spine_visibility: Query<&mut Visibility, With<Spine>>,
     mut spine_ready_msg: MessageReader<SpineReadyMsg>,
     view_res: Res<ViewRes>,
 ) {
@@ -638,8 +640,14 @@ fn spine_spawn(
         }
     } else if view_res.avg {
         for msg in spine_ready_msg.read() {
-            if let Ok((mut spine, s)) = vn_spine_query.get_mut(msg.entity) {
-                let _ = spine.animation_state.set_animation_by_name(0, &s.1, true);
+            if let Ok((mut spine, s)) = vn_spine_query.get_mut(msg.entity)
+                && let Ok(mut visibility) = spine_visibility.get_mut(msg.entity) {
+                if &s.1 == "<Off>" {
+                    *visibility = Visibility::Hidden;
+                } else {
+                    *visibility = Visibility::Visible;
+                    let _ = spine.animation_state.set_animation_by_name(0, &s.1, true);
+                }
             }
         }
     }
@@ -849,21 +857,20 @@ fn check_wait(
 }
 
 fn vn_dialogue(
-    mut vn_text: Single<&mut VNText>,
-    mut text: Single<&mut Text, With<VNText>>,
+    mut text: Single<(&mut Text, &mut VNText)>,
     fade_query: Query<&FadeOverlay>,
     time: Res<Time>,
     view_res: Res<ViewRes>,
 ) {
     if view_res.avg && fade_query.count() == 0 {
-        vn_text.timer.tick(time.delta());
-        if vn_text.timer.just_finished() && vn_text.index < vn_text.len() {
-            vn_text.index += 1;
-            let displayed_text: String = vn_text.text
+        text.1.timer.tick(time.delta());
+        if text.1.timer.just_finished() && text.1.index < text.1.len() {
+            text.1.index += 1;
+            let displayed_text: String = text.1.text
                 .chars()
-                .take(vn_text.index)
+                .take(text.1.index)
                 .collect();
-            text.0 = displayed_text.clone();
+            text.0.0 = displayed_text.clone();
         }
     }
 }
@@ -908,6 +915,29 @@ fn fade_sound(
     }
 }
 
+fn normalize(text: &str, view_res: &ResMut<ViewRes>) -> String {
+    view_res.avg_regex.replace_all(text, |caps: &Captures| {
+        if caps.name("interval").is_some() {
+            return "...";
+        }
+        if let Some(p) = caps.name("param") {
+            let tag = p.as_str();
+            let (Some(l), Some(r)) = (tag.find('='), tag.rfind('>')) else {
+                return "";
+            };
+            if (l + 1) >= r {
+                return "";
+            }
+            let key = &tag[(l + 1)..r];
+            return view_res.params.get(key).map(String::as_str).or_else(|| {
+                view_res.vn.param.get(key).and_then(|param| param.value.as_deref())
+                }).unwrap_or("");
+        }
+        ""
+    }).into_owned()
+}
+
+
 fn play_vn(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
@@ -917,6 +947,7 @@ fn play_vn(
     mut texture_query: Query<(Entity, &VNTexture)>,
     mut audio_query: Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
     mut spine_query: Query<(Entity, &mut Spine, &mut VNSpine)>,
+    mut spine_visibility: Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
     mut vn_msg: MessageReader<VNMsg>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
     mut skeletons: ResMut<Assets<SkeletonData>>,
@@ -933,7 +964,7 @@ fn play_vn(
                 match node.command.as_ref().map(|s| &s[..]) {
                     None => {
                         if default_cmd(node, &asset_server, &mut commands, &mut vn_char, &mut vn_text, &mut vn_ui,
-                            &mut audio_query, &mut spine_query, &mut skeletons, &view_res) {
+                            &mut audio_query, &mut spine_query, &mut spine_visibility, &mut skeletons, &view_res) {
                             view_res.avg_offset += 1;
                             break;
                         }
@@ -977,6 +1008,11 @@ fn play_vn(
                     Some(f @ "FadeOut") | Some(f @ "FadeIn") => {
                         fade_overlay_cmd(f, node, &mut commands);
                     }
+                    Some("Param") => {
+                        if let Some((k, v)) = param_cmd(node) {
+                            view_res.params.insert(k, v);
+                        }
+                    }
                     Some(cmd) => warn!("Command {} Unimplemented", cmd)
                 }
                 view_res.avg_offset += 1;
@@ -1004,19 +1040,14 @@ fn default_cmd(
     vn_ui: &mut Query<&mut Visibility, With<VNGui>>,
     audio_query: &mut Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
     spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine)>,
+    spine_visibility: &mut Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
     skeletons: &mut ResMut<Assets<SkeletonData>>,
     view_res: &ResMut<ViewRes>,
 ) -> bool {
     let mut wait = false;
     // dialogue text
     if let Some(t) = &node.text {
-        let text = view_res.avg_regex.replace_all(t, |caps: &Captures| {
-            if caps.name("interval").is_some() {
-                "……"
-            } else {
-                ""
-            }
-        }).into_owned();
+        let text = normalize(t, view_res);
         vn_text.update(&text);
         vn_ui.iter_mut().for_each(|mut v| {
             *v = Visibility::Visible
@@ -1046,13 +1077,24 @@ fn default_cmd(
     // draw character and update dialogue character name
     let char_name = str!(node.arg1);
     if let (Some(character), Some(motion)) = (view_res.vn.character.get(char_name), node.arg2.as_deref()) {
-        vn_char.0 = view_res.params.get(char_name).map(|s| s.to_string()).unwrap_or(char_name.into());
+        if let Some(name_text) = character.name_text.as_deref() {
+            vn_char.0 = normalize(name_text, view_res)
+        } else {
+            vn_char.0 = char_name.into();
+        }
         let mut spine_spawned = false;
-        spine_query.iter_mut().for_each(|(_, mut spine, mut s)| {
+        spine_query.iter_mut().for_each(|(e, mut spine, mut s)| {
             if s.0 == char_name {
                 spine_spawned = true;
                 s.1 = motion.into();
-                let _ = spine.animation_state.set_animation_by_name(0, motion, true);
+                if let Ok(mut visibility) = spine_visibility.get_mut(e) {
+                    if s.1 == "<Off>" {
+                        *visibility = Visibility::Hidden;
+                    } else {
+                        *visibility = Visibility::Visible;
+                        let _ = spine.animation_state.set_animation_by_name(0, motion, true);
+                    }
+                }
             }
         });
         if !spine_spawned {
@@ -1400,4 +1442,13 @@ fn stop_voice_cmd(
         info!("stop unfinished voice");
         commands.entity(entity).despawn()
     })
+}
+
+fn param_cmd(node: &utage4::Node) -> Option<(String, String)> {
+    let pattern = str!(node.arg1).replace("\\\"", "");
+    if let Some((k, v)) = pattern.split_once('=')
+        && !k.is_empty() {
+        return Some((k.into(), v[..v.len()].replace('"', "").into()))
+    }
+    None
 }

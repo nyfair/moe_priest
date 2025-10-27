@@ -26,6 +26,9 @@ regex = "1"
 log = { version = "0", features = ["release_max_level_off"] }
 tracing = { version = "0", features = ["release_max_level_off"] }
 
+# wait for https://github.com/bevyengine/bevy/pull/20323
+symphonia-core = "=0.5.4"
+
 [profile.release]
 strip = true
 lto = true
