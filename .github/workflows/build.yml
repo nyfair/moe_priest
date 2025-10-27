@@ -1,0 +1,55 @@
+name: build
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-pc-windows-msvc
+    steps:
+    - name: Prepare
+      run: git config --global core.autocrlf false
+    - uses: actions/checkout@v4
+    - name: Compile
+      run: |
+        cargo build --release
+        move target\release\*.exe .
+        7z a ${{ matrix.target }}.7z moe*.exe
+    - name: Upload
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: ${{ matrix.target }}.7z
+        tag: latest
+        overwrite: true
+        file_glob: true
+  build-linux:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - x86_64-unknown-linux-gnu
+    steps:
+    - uses: actions/checkout@v4
+    - name: Compile
+      run: |
+        sudo apt-get update && sudo apt-get --assume-yes install libwayland-dev libasound2-dev
+        cargo build --release
+        mv target/release/* .
+        rm *.d
+        tar acf ${{ matrix.target }}.tar.xz moe*
+    - name: Upload
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: ${{ matrix.target }}.tar.xz
+        tag: latest
+        overwrite: true
+        file_glob: true

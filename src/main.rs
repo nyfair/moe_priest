@@ -918,7 +918,7 @@ fn fade_sound(
 fn normalize(text: &str, view_res: &ResMut<ViewRes>) -> String {
     view_res.avg_regex.replace_all(text, |caps: &Captures| {
         if caps.name("interval").is_some() {
-            return "...";
+            return "……";
         }
         if let Some(p) = caps.name("param") {
             let tag = p.as_str();
@@ -1447,8 +1447,8 @@ fn stop_voice_cmd(
 fn param_cmd(node: &utage4::Node) -> Option<(String, String)> {
     let pattern = str!(node.arg1).replace("\\\"", "");
     if let Some((k, v)) = pattern.split_once('=')
-        && !k.is_empty() {
-        return Some((k.into(), v[..v.len()].replace('"', "").into()))
+        && !k.is_empty() && !v.is_empty() {
+        return Some((k.into(), v.replace('"', "")))
     }
     None
 }
