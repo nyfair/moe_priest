@@ -7,6 +7,7 @@ use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar, ScrollbarPlugin};
 use bevy::window::{PrimaryWindow, WindowMode};
+use bevy_auto_scaling::{AspectRatio, ScalePlugin, ScalingUI, fixed_size_2d};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
 use regex::{Regex, Captures};
@@ -234,12 +235,17 @@ fn main() {
                 ..default()
             }
         ),
+            ScalePlugin,
             ScrollbarPlugin,
             SpinePlugin,
             TransformInterpolationPlugin::interpolate_all(),
         ))
         .insert_resource(ClearColor(Color::NONE))
         .insert_resource(Time::<Fixed>::from_hz(10.))
+        .insert_resource(ScalingUI {
+            width: 3840.,
+            height: 2160.,
+        })
         .add_message::<SceneMsg>()
         .add_message::<VNToogleMsg>()
         .add_message::<VNMsg>()
@@ -308,7 +314,11 @@ fn setup(
         }
     }
 
-    commands.spawn(Camera2d);
+    commands.spawn((
+        Camera2d,
+        AspectRatio(16. / 9.),
+        fixed_size_2d(1920. * 1.14514, 1080. * 1.14514),
+    ));
     commands.insert_resource(ViewRes {
         spines,
         events,

@@ -16,6 +16,7 @@ bevy = { version = "0.17", default-features = false, features = [
     "wayland",
     "experimental_bevy_ui_widgets",
 ] }
+bevy_auto_scaling = { path = "bevy_auto_scaling" }
 bevy_spine = { path = "bevy_spine" }
 bevy_transform_interpolation = "0.3"
 serde = { version = "1", features = ["derive"] }
