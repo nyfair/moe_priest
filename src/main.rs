@@ -6,7 +6,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar, ScrollbarPlugin};
-use bevy::window::{PrimaryWindow, WindowMode};
+use bevy::window::{PrimaryWindow, WindowMode, WindowResolution};
 use bevy_auto_scaling::{AspectRatio, ScalePlugin, ScalingUI, fixed_size_2d};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
@@ -224,12 +224,14 @@ struct VNToogleMsg(bool);
 struct VNMsg;
 
 fn main() {
+    let resolution = WindowResolution::new(3840, 2160).with_scale_factor_override(1.75);
     App::new()
         .add_plugins((
             DefaultPlugins.set(
             WindowPlugin {
                 primary_window: Some(Window {
                     mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
+                    resolution,
                     ..default()
                 }),
                 ..default()
@@ -251,6 +253,7 @@ fn main() {
         .add_message::<VNMsg>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
+            toggle_fullscreeen,
             list_scene,
             choose_scene,
             spine_spawn.in_set(SpineSet::OnReady),
@@ -266,6 +269,19 @@ fn main() {
         ))
         .add_systems(FixedUpdate, (mouse_scroll, mouse_object_move))
         .run();
+}
+
+fn toggle_fullscreeen(
+    key: Res<ButtonInput<KeyCode>>,
+    mut window: Single<&mut Window, With<PrimaryWindow>>,
+) {
+    if key.just_released(KeyCode::Enter) && (key.pressed(KeyCode::AltLeft) | key.pressed(KeyCode::AltRight)) {
+        if window.mode == WindowMode::Windowed {
+            window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Current);
+        } else {
+            window.mode = WindowMode::Windowed;
+        }
+    }
 }
 
 fn setup(
