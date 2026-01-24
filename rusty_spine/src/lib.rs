@@ -32,8 +32,6 @@
 )]
 // https://github.com/rust-lang/rust-clippy/issues/11382
 #![allow(clippy::arc_with_non_send_sync)]
-// https://github.com/rust-lang/rust/issues/144588
-#![allow(mismatched_lifetime_syntaxes)]
 
 #[macro_use]
 pub mod c_interface;

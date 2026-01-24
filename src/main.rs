@@ -224,14 +224,13 @@ struct VNToogleMsg(bool);
 struct VNMsg;
 
 fn main() {
-    let resolution = WindowResolution::new(3840, 2160).with_scale_factor_override(1.75);
     App::new()
         .add_plugins((
             DefaultPlugins.set(
             WindowPlugin {
                 primary_window: Some(Window {
                     mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
-                    resolution,
+                    resolution: WindowResolution::new(3840, 2160).with_scale_factor_override(1.75),
                     ..default()
                 }),
                 ..default()
@@ -328,6 +327,8 @@ fn setup(
                 });
             }
         }
+    } else {
+        info!("xxx");
     }
 
     commands.spawn((

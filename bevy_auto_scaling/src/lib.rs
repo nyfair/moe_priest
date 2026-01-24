@@ -43,13 +43,13 @@ const EPSILON: f32 = 1e-6;
 
 fn adjust_camera(
     mut e: MessageReader<WindowResized>,
-    mut cam: Query<(&AspectRatio, &mut Camera)>,
+    mut cam: Query<(&AspectRatio, &mut Camera, &mut RenderTarget)>,
     windows: Query<&Window>,
     primary: Query<&PrimaryWindow>,
 ) {
     for event in e.read() {
-        for (ratio, mut camera) in cam.iter_mut() {
-            let RenderTarget::Window(rref) = camera.target else {
+        for (ratio, mut camera, target) in cam.iter_mut() {
+            let RenderTarget::Window(rref) = *target else {
                 continue;
             };
             if let WindowRef::Primary = rref {

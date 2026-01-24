@@ -96,7 +96,7 @@ impl AnimationState {
         track_index: usize,
         animation_name: &str,
         looping: bool,
-    ) -> CTmpMut<Self, TrackEntry> {
+    ) -> CTmpMut<'_, Self, TrackEntry> {
         let c_animation_name = to_c_str(animation_name);
         CTmpMut::new(
             self,
@@ -120,7 +120,7 @@ impl AnimationState {
         track_index: usize,
         animation_name: &str,
         looping: bool,
-    ) -> Result<CTmpMut<Self, TrackEntry>, SpineError> {
+    ) -> Result<CTmpMut<'_, Self, TrackEntry>, SpineError> {
         if self
             .data()
             .skeleton_data()
@@ -142,7 +142,7 @@ impl AnimationState {
         track_index: usize,
         animation: &Animation,
         looping: bool,
-    ) -> CTmpMut<Self, TrackEntry> {
+    ) -> CTmpMut<'_, Self, TrackEntry> {
         unsafe {
             CTmpMut::new(
                 self,
@@ -170,7 +170,7 @@ impl AnimationState {
         animation_name: &str,
         looping: bool,
         delay: f32,
-    ) -> CTmpMut<Self, TrackEntry> {
+    ) -> CTmpMut<'_, Self, TrackEntry> {
         let c_animation_name = to_c_str(animation_name);
         CTmpMut::new(
             self,
@@ -196,7 +196,7 @@ impl AnimationState {
         animation_name: &str,
         looping: bool,
         delay: f32,
-    ) -> Result<CTmpMut<Self, TrackEntry>, SpineError> {
+    ) -> Result<CTmpMut<'_, Self, TrackEntry>, SpineError> {
         if self
             .data()
             .skeleton_data()
@@ -219,7 +219,7 @@ impl AnimationState {
         animation: &Animation,
         looping: bool,
         delay: f32,
-    ) -> CTmpMut<Self, TrackEntry> {
+    ) -> CTmpMut<'_, Self, TrackEntry> {
         unsafe {
             CTmpMut::new(
                 self,
@@ -238,7 +238,7 @@ impl AnimationState {
         &mut self,
         track_index: usize,
         mix_duration: f32,
-    ) -> CTmpMut<Self, TrackEntry> {
+    ) -> CTmpMut<'_, Self, TrackEntry> {
         unsafe {
             CTmpMut::new(
                 self,
@@ -256,7 +256,7 @@ impl AnimationState {
         track_index: usize,
         mix_duration: f32,
         delay: f32,
-    ) -> CTmpMut<Self, TrackEntry> {
+    ) -> CTmpMut<'_, Self, TrackEntry> {
         unsafe {
             CTmpMut::new(
                 self,
@@ -277,7 +277,7 @@ impl AnimationState {
     }
 
     #[must_use]
-    pub fn get_current(&self, track_index: usize) -> Option<CTmpRef<Self, TrackEntry>> {
+    pub fn get_current(&self, track_index: usize) -> Option<CTmpRef<'_, Self, TrackEntry>> {
         unsafe {
             let ptr = spAnimationState_getCurrent(self.c_ptr(), track_index as i32);
             if !ptr.is_null() {

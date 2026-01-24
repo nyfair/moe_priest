@@ -24,7 +24,7 @@ pub struct Atlas {
     pub atlas: Arc<rusty_spine::Atlas>,
 }
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub(crate) struct AtlasLoader;
 
 impl AssetLoader for AtlasLoader {
@@ -60,6 +60,7 @@ impl AssetLoader for AtlasLoader {
                 &lines.join("\n").into_bytes(),
                 load_context
                     .path()
+                    .path()
                     .parent()
                     .unwrap_or_else(|| Path::new("")),
             )?),
@@ -79,7 +80,7 @@ pub struct SkeletonJson {
     pub json: Vec<u8>,
 }
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub(crate) struct SkeletonJsonLoader;
 
 impl AssetLoader for SkeletonJsonLoader {
@@ -113,7 +114,7 @@ pub struct SkeletonBinary {
     pub binary: Vec<u8>,
 }
 
-#[derive(Default)]
+#[derive(Default, TypePath)]
 pub(crate) struct SkeletonBinaryLoader;
 
 impl AssetLoader for SkeletonBinaryLoader {
