@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod tween;
 mod utage4;
 
 use bevy::audio::{PlaybackMode, Volume};
@@ -15,7 +16,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::read_to_string;
 use std::time::Duration;
 
-use crate::utage4::VNConfig;
+use utage4::VNConfig;
+use tween::Tween;
 
 const FONT: &str = "FOT-NewRodinProN-EB.otf";
 const HEADTEXT: Color = Color::srgb(0.5, 0.8, 0.7);
@@ -289,7 +291,7 @@ fn setup(
     mut scene_msg: MessageWriter<SceneMsg>,
 ) {
     let vn = if let Ok(content) = read_to_string("assets/advscene/scenariochapter/config.chapter.json") {
-        utage4::parse_chapter(content)
+        VNConfig::new(content)
     } else {
         VNConfig::default()
     };
@@ -327,8 +329,6 @@ fn setup(
                 });
             }
         }
-    } else {
-        info!("xxx");
     }
 
     commands.spawn((
@@ -1040,6 +1040,9 @@ fn play_vn(
                             view_res.params.insert(k, v);
                         }
                     }
+                    Some("Tween") => {
+                        tween_cmd(node, &mut commands);
+                    }
                     Some(cmd) => warn!("Command {} Unimplemented", cmd)
                 }
                 view_res.avg_offset += 1;
@@ -1478,4 +1481,16 @@ fn param_cmd(node: &utage4::Node) -> Option<(String, String)> {
         return Some((k.into(), v.replace('"', "")))
     }
     None
+}
+
+fn tween_cmd(
+    node: &utage4::Node,
+    _commands: &mut Commands,
+) {
+    if let Some(tween) = Tween::new(node) {
+
+    } else {
+        warn!("Unimplemented tween type: {:?}", node.arg2);
+    }
+
 }

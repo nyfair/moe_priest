@@ -10,7 +10,7 @@
 - Spine骨骼动画
 
 ## 依赖与环境
-- Rust（建议使用 stable 通道，Rust 1.65+ 或更新版本）
+- Rust（建议使用 stable 通道）
 - Cargo（随 Rust 一起安装）
 - GPU 驱动与系统依赖（Bevy 依赖 wgpu；请确保你的系统图形驱动是最新的）
 
@@ -20,19 +20,16 @@
    git clone https://github.com/nyfair/moe_priest.git  
    cd moe_priest
 
-2. 安装 Rust（若尚未安装）
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh  
-   rustup default stable  
+2. 安装 Rust（若尚未安装）  
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh && rustup default stable  
 
-3. 运行（开发模式）
+3. 运行（开发模式）  
    cargo run
 
-   或构建发行版
-   cargo build --release
-   ./target/release/moe_priest
+   或构建发行版  
+   cargo build --release && ./target/release/moe_priest
 
 ## 演示
 
 
 https://github.com/user-attachments/assets/64d1ab88-3eb6-4a72-b131-0bef3d241574
-
