@@ -6,20 +6,24 @@ on:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     strategy:
       fail-fast: false
       matrix:
         target:
           - x86_64-pc-windows-msvc
+          - aarch64-pc-windows-msvc
     steps:
     - name: Prepare
       run: git config --global core.autocrlf false
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v6
     - name: Compile
       run: |
-        cargo build --release
-        move target\release\*.exe .
+        rustup set profile minimal
+        rustup target add --toolchain stable ${{ matrix.target }}
+        rustup update
+        cargo build --release --target=${{ matrix.target }}
+        move target\${{ matrix.target }}\release\*.exe .
         7z a ${{ matrix.target }}.7z moe*.exe
     - name: Upload
       uses: svenstaro/upload-release-action@v2
@@ -30,9 +34,8 @@ jobs:
         overwrite: true
         file_glob: true
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
-      fail-fast: false
       matrix:
         target:
           - x86_64-unknown-linux-gnu
@@ -41,6 +44,33 @@ jobs:
     - name: Compile
       run: |
         sudo apt-get update && sudo apt-get --assume-yes install libwayland-dev libasound2-dev
+        rustup set profile minimal
+        rustup update
+        cargo build --release
+        mv target/release/* .
+        rm *.d
+        tar acf ${{ matrix.target }}.tar.xz moe*
+    - name: Upload
+      uses: svenstaro/upload-release-action@v2
+      with:
+        repo_token: ${{ secrets.GITHUB_TOKEN }}
+        file: ${{ matrix.target }}.tar.xz
+        tag: latest
+        overwrite: true
+        file_glob: true
+  build-linux-arm:
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+    steps:
+    - uses: actions/checkout@v4
+    - name: Compile
+      run: |
+        sudo apt-get update && sudo apt-get --assume-yes install libwayland-dev libasound2-dev
+        rustup set profile minimal
+        rustup update
         cargo build --release
         mv target/release/* .
         rm *.d
