@@ -25,6 +25,7 @@ const LISTTEXT: Color = Color::srgb(0.2, 0.8, 0.2);
 const SELECTTEXT: Color = Color::srgb(0.8, 0.8, 0.8);
 const HOVERBG: Color = Color::srgb(0.1, 0.4, 0.1);
 const VNSPEED: Duration = Duration::from_millis(60);
+const AUTOFORWARD: Duration = Duration::from_millis(1000);
 const CHARTEXT: Color = Color::srgb_u8(237, 221, 192);
 const VNTEXT: Color = Color::srgb_u8(78, 72, 70);
 const Z_CG: i32 = 300;
@@ -97,6 +98,8 @@ struct ViewRes {
     avg_offset: usize,
     avg_regex: Regex,
     fast: bool,
+    auto: bool,
+    voice_played: bool,
     wait_timer: Option<Timer>,
     params: HashMap<String, String>
 }
@@ -267,22 +270,10 @@ fn main() {
             fade_overlay,
             fade_sound,
             check_wait,
+            check_auto_forward,
         ))
         .add_systems(FixedUpdate, (mouse_scroll, mouse_object_move))
         .run();
-}
-
-fn toggle_fullscreeen(
-    key: Res<ButtonInput<KeyCode>>,
-    mut window: Single<&mut Window, With<PrimaryWindow>>,
-) {
-    if key.just_released(KeyCode::Enter) && (key.pressed(KeyCode::AltLeft) | key.pressed(KeyCode::AltRight)) {
-        if window.mode == WindowMode::Windowed {
-            window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Current);
-        } else {
-            window.mode = WindowMode::Windowed;
-        }
-    }
 }
 
 fn setup(
@@ -347,6 +338,8 @@ fn setup(
         // <interval=???> to ..., <param=???> for param matching, remove other tags
         avg_regex: Regex::new(r"(?P<interval><interval=[^>]*>)|(?P<param><param=[^>]*>)|(?P<other><[^>]*>)").unwrap(),
         fast: false,
+        auto: false,
+        voice_played: false,
         wait_timer: None,
         params: HashMap::new(),
     });
@@ -437,6 +430,20 @@ fn setup(
         },
         TextColor(VNTEXT),
     ));
+}
+
+fn toggle_fullscreeen(
+    key: Res<ButtonInput<KeyCode>>,
+    mut window: Single<&mut Window, With<PrimaryWindow>>,
+) {
+    if (key.just_released(KeyCode::Enter) && (key.pressed(KeyCode::AltLeft) || key.pressed(KeyCode::AltRight)))
+    || key.just_released(KeyCode::F11) {
+        if window.mode == WindowMode::Windowed {
+            window.mode = WindowMode::BorderlessFullscreen(MonitorSelection::Current);
+        } else {
+            window.mode = WindowMode::Windowed;
+        }
+    }
 }
 
 fn list_scene(
@@ -763,7 +770,7 @@ fn input_handler(
 
     if view_res.avg {
         if button.just_pressed(MouseButton::Left)
-        | key.just_pressed(KeyCode::Enter) | key.just_pressed(KeyCode::Space) {
+        || key.just_pressed(KeyCode::Enter) || key.just_pressed(KeyCode::Space) {
             vn_msg.write(VNMsg);
         }
         if key.just_pressed(KeyCode::Escape) {
@@ -771,11 +778,14 @@ fn input_handler(
             view_res.wait_timer = None;
             vn_ui_msg.write(VNToogleMsg(false));
         }
-        if key.just_released(KeyCode::ControlLeft) | key.just_released(KeyCode::ControlRight) {
+        if key.just_released(KeyCode::ControlLeft) || key.just_released(KeyCode::ControlRight) {
             view_res.fast = false;
         }
-        if key.pressed(KeyCode::ControlLeft) | key.pressed(KeyCode::ControlRight) {
+        if key.pressed(KeyCode::ControlLeft) || key.pressed(KeyCode::ControlRight) {
             view_res.fast = true;
+        }
+        if key.just_released(KeyCode::Tab) {
+            view_res.auto = !view_res.auto;
         }
     }
 }
@@ -815,155 +825,6 @@ fn toggle_vn(
         }
     }
 }
-
-fn mouse_scroll(
-    mut spine_query: Query<&mut Transform, Or<(With<Spine>, With<VNTexture>)>>,
-    scrollbar: Single<&Scrollbar>,
-    mut scrolled_query: Query<(&mut ScrollPosition, &ComputedNode), Without<Scrollbar>>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    mut scroll: MessageReader<MouseWheel>,
-    time: Res<Time>,
-) {
-    for ev in scroll.read() {
-        if ev.y == 0. {
-            break
-        }
-        let delta_secs = time.delta_secs();
-        if let Some(pos) = window.cursor_position() {
-            if pos.x > window.width() * 0.88 {
-                if let Ok((mut scroll_pos, scroll_content)) = scrolled_query.get_mut(scrollbar.target) {
-                    let visible_size = scroll_content.size() * scroll_content.inverse_scale_factor;
-                    let content_size = scroll_content.content_size() * scroll_content.inverse_scale_factor;
-                    let range = (content_size.y - visible_size.y).max(0.);
-                    scroll_pos.y -= ev.y * 5000. * delta_secs;
-                    scroll_pos.y = scroll_pos.y.clamp(0., range);
-                };
-            } else {
-                spine_query.iter_mut().for_each(|mut spine| {
-                    spine.scale += ev.y * 0.1 * delta_secs
-                });
-            }
-        }
-    }
-}
-
-fn mouse_object_move(
-    mut object_query: Query<&mut Transform, Or<(With<Spine>, With<VNTexture>)>>,
-    mut motion: MessageReader<MouseMotion>,
-    button: Res<ButtonInput<MouseButton>>,
-    time: Res<Time>,
-) {
-    if button.pressed(MouseButton::Middle) {
-        let delta_secs = time.delta_secs();
-        for ev in motion.read() {
-            object_query.iter_mut().for_each(|mut obj| {
-                obj.translation.x += ev.delta.x * 6. * delta_secs;
-                obj.translation.y -= ev.delta.y * 6. * delta_secs;
-            })
-        }
-    }
-}
-
-fn check_wait(
-    mut vn_msg: MessageWriter<VNMsg>,
-    time: Res<Time>,
-    mut view_res: ResMut<ViewRes>,
-) {
-    if view_res.avg {
-        if view_res.fast {
-            view_res.wait_timer = None;
-            vn_msg.write(VNMsg);
-        } else if let Some(timer) = &mut view_res.wait_timer {
-            timer.tick(time.delta());
-            if timer.is_finished() {
-                view_res.wait_timer = None;
-                vn_msg.write(VNMsg);
-            }
-        }
-    }
-}
-
-fn vn_dialogue(
-    mut text: Single<(&mut Text, &mut VNText)>,
-    fade_query: Query<&FadeOverlay>,
-    time: Res<Time>,
-    view_res: Res<ViewRes>,
-) {
-    if view_res.avg && fade_query.count() == 0 {
-        text.1.timer.tick(time.delta());
-        if text.1.timer.just_finished() && text.1.index < text.1.len() {
-            text.1.index += 1;
-            let displayed_text: String = text.1.text
-                .chars()
-                .take(text.1.index)
-                .collect();
-            text.0.0 = displayed_text.clone();
-        }
-    }
-}
-
-fn fade_overlay(
-    mut commands: Commands,
-    mut fade_query: Query<(Entity, &mut FadeOverlay, &mut BackgroundColor)>,
-    time: Res<Time>,
-) {
-    fade_query.iter_mut().for_each(|(entity, mut fade, mut color)| {
-        fade.timer.tick(time.delta());
-        if fade.timer.just_finished() {
-            info!("layer fade{} effect finished", if fade.fade_out {"out"} else {"in"});
-            commands.entity(entity).despawn();
-        } else {
-            let mut new_color = fade.color;
-            if fade.fade_out {
-                new_color.set_alpha(fade.timer.fraction());
-            } else {
-                new_color.set_alpha(fade.timer.fraction_remaining());
-            }
-            *color = BackgroundColor(new_color);
-        }
-    })
-}
-
-fn fade_sound(
-    mut commands: Commands,
-    mut audio_query: Query<(Entity, &mut AudioSink, &mut AudioFade)>,
-    time: Res<Time>,
-) {
-    for (entity, mut sink, mut fade) in audio_query.iter_mut() {
-        fade.0.tick(time.delta());
-        if fade.0.is_finished() {
-            info!("sound fade out");
-            commands.entity(entity).despawn();
-        } else {
-            sink.set_volume(
-                fade.1.fade_towards(Volume::Linear(0.), fade.0.fraction()),
-            );
-        }
-    }
-}
-
-fn normalize(text: &str, view_res: &ResMut<ViewRes>) -> String {
-    view_res.avg_regex.replace_all(text, |caps: &Captures| {
-        if caps.name("interval").is_some() {
-            return "……";
-        }
-        if let Some(p) = caps.name("param") {
-            let tag = p.as_str();
-            let (Some(l), Some(r)) = (tag.find('='), tag.rfind('>')) else {
-                return "";
-            };
-            if (l + 1) >= r {
-                return "";
-            }
-            let key = &tag[(l + 1)..r];
-            return view_res.params.get(key).map(String::as_str).or_else(|| {
-                view_res.vn.param.get(key).and_then(|param| param.value.as_deref())
-                }).unwrap_or("");
-        }
-        ""
-    }).into_owned()
-}
-
 
 fn play_vn(
     asset_server: Res<AssetServer>,
@@ -1059,6 +920,177 @@ fn play_vn(
             })
         }
     }
+}
+
+fn vn_dialogue(
+    mut text: Single<(&mut Text, &mut VNText)>,
+    fade_query: Query<&FadeOverlay>,
+    time: Res<Time>,
+    view_res: Res<ViewRes>,
+) {
+    if view_res.avg && fade_query.count() == 0 {
+        text.1.timer.tick(time.delta());
+        if text.1.timer.just_finished() && text.1.index < text.1.len() {
+            text.1.index += 1;
+            let displayed_text: String = text.1.text
+                .chars()
+                .take(text.1.index)
+                .collect();
+            text.0.0 = displayed_text.clone();
+        }
+    }
+}
+
+fn fade_overlay(
+    mut commands: Commands,
+    mut fade_query: Query<(Entity, &mut FadeOverlay, &mut BackgroundColor)>,
+    time: Res<Time>,
+) {
+    fade_query.iter_mut().for_each(|(entity, mut fade, mut color)| {
+        fade.timer.tick(time.delta());
+        if fade.timer.just_finished() {
+            info!("layer fade{} effect finished", if fade.fade_out {"out"} else {"in"});
+            commands.entity(entity).despawn();
+        } else {
+            let mut new_color = fade.color;
+            if fade.fade_out {
+                new_color.set_alpha(fade.timer.fraction());
+            } else {
+                new_color.set_alpha(fade.timer.fraction_remaining());
+            }
+            *color = BackgroundColor(new_color);
+        }
+    })
+}
+
+fn fade_sound(
+    mut commands: Commands,
+    mut audio_query: Query<(Entity, &mut AudioSink, &mut AudioFade)>,
+    time: Res<Time>,
+) {
+    for (entity, mut sink, mut fade) in audio_query.iter_mut() {
+        fade.0.tick(time.delta());
+        if fade.0.is_finished() {
+            info!("sound fade out");
+            commands.entity(entity).despawn();
+        } else {
+            sink.set_volume(
+                fade.1.fade_towards(Volume::Linear(0.), fade.0.fraction()),
+            );
+        }
+    }
+}
+
+fn check_wait(
+    mut vn_msg: MessageWriter<VNMsg>,
+    time: Res<Time>,
+    mut view_res: ResMut<ViewRes>,
+) {
+    if view_res.avg {
+        if view_res.fast {
+            view_res.wait_timer = None;
+            vn_msg.write(VNMsg);
+        } else if let Some(timer) = &mut view_res.wait_timer {
+            timer.tick(time.delta());
+            if timer.is_finished() {
+                view_res.wait_timer = None;
+                vn_msg.write(VNMsg);
+            }
+        }
+    }
+}
+
+fn check_auto_forward(
+    vn_text: Single<&VNText>,
+    audio_query: Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
+    mut view_res: ResMut<ViewRes>,
+) {
+    if view_res.avg && view_res.auto && !view_res.fast && view_res.wait_timer.is_none() {
+        if vn_text.finished() {
+            for (_, _, audio) in audio_query.iter() {
+                if audio.0 == AudioType::Voice {
+                    view_res.voice_played = true;
+                    return
+                }
+            }
+            if view_res.voice_played {
+                view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
+                view_res.voice_played = false;
+            } else {
+                view_res.wait_timer = Some(Timer::new(AUTOFORWARD, TimerMode::Once));
+            }
+        }
+    }
+}
+
+fn mouse_scroll(
+    mut spine_query: Query<&mut Transform, Or<(With<Spine>, With<VNTexture>)>>,
+    scrollbar: Single<&Scrollbar>,
+    mut scrolled_query: Query<(&mut ScrollPosition, &ComputedNode), Without<Scrollbar>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    mut scroll: MessageReader<MouseWheel>,
+    time: Res<Time>,
+) {
+    for ev in scroll.read() {
+        if ev.y == 0. {
+            break
+        }
+        let delta_secs = time.delta_secs();
+        if let Some(pos) = window.cursor_position() {
+            if pos.x > window.width() * 0.88 {
+                if let Ok((mut scroll_pos, scroll_content)) = scrolled_query.get_mut(scrollbar.target) {
+                    let visible_size = scroll_content.size() * scroll_content.inverse_scale_factor;
+                    let content_size = scroll_content.content_size() * scroll_content.inverse_scale_factor;
+                    let range = (content_size.y - visible_size.y).max(0.);
+                    scroll_pos.y -= ev.y * 5000. * delta_secs;
+                    scroll_pos.y = scroll_pos.y.clamp(0., range);
+                };
+            } else {
+                spine_query.iter_mut().for_each(|mut spine| {
+                    spine.scale += ev.y * 0.1 * delta_secs
+                });
+            }
+        }
+    }
+}
+
+fn mouse_object_move(
+    mut object_query: Query<&mut Transform, Or<(With<Spine>, With<VNTexture>)>>,
+    mut motion: MessageReader<MouseMotion>,
+    button: Res<ButtonInput<MouseButton>>,
+    time: Res<Time>,
+) {
+    if button.pressed(MouseButton::Middle) {
+        let delta_secs = time.delta_secs();
+        for ev in motion.read() {
+            object_query.iter_mut().for_each(|mut obj| {
+                obj.translation.x += ev.delta.x * 6. * delta_secs;
+                obj.translation.y -= ev.delta.y * 6. * delta_secs;
+            })
+        }
+    }
+}
+
+fn normalize(text: &str, view_res: &ResMut<ViewRes>) -> String {
+    view_res.avg_regex.replace_all(text, |caps: &Captures| {
+        if caps.name("interval").is_some() {
+            return "……";
+        }
+        if let Some(p) = caps.name("param") {
+            let tag = p.as_str();
+            let (Some(l), Some(r)) = (tag.find('='), tag.rfind('>')) else {
+                return "";
+            };
+            if (l + 1) >= r {
+                return "";
+            }
+            let key = &tag[(l + 1)..r];
+            return view_res.params.get(key).map(String::as_str).or_else(|| {
+                view_res.vn.param.get(key).and_then(|param| param.value.as_deref())
+                }).unwrap_or("");
+        }
+        ""
+    }).into_owned()
 }
 
 fn default_cmd(
@@ -1394,7 +1426,7 @@ fn stop_sound_item_cmd(
         .filter(|x| {
             // none means all type/label
             let type_match = audio_type.as_ref().is_none_or(|t| &x.2.0 == t);
-            let label_match = ignore_label | node.arg1.as_ref().is_none_or(|l| &x.2.1 == l);
+            let label_match = ignore_label || node.arg1.as_ref().is_none_or(|l| &x.2.1 == l);
             type_match && label_match && x.2.0 != AudioType::Voice
         }).for_each(|(entity, sink, vn)| {
             info!("fade out {}", vn.1);
@@ -1485,7 +1517,7 @@ fn param_cmd(node: &utage4::Node) -> Option<(String, String)> {
 
 fn tween_cmd(
     node: &utage4::Node,
-    _commands: &mut Commands,
+    commands: &mut Commands,
 ) {
     if let Some(tween) = Tween::new(node) {
 
