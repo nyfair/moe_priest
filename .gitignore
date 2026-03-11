@@ -1,4 +1,5 @@
 moe*
+*.exe
 Cargo.lock
 assets/
 target/

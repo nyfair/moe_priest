@@ -830,7 +830,7 @@ fn play_vn(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
     mut vn_char: Single<&mut Text, With<VNChar>>,
-    mut vn_text: Single<&mut VNText>,
+    mut vn_text: Single<(&mut Text, &mut VNText), Without<VNChar>>,
     mut vn_ui: Query<&mut Visibility, With<VNGui>>,
     mut texture_query: Query<(Entity, &VNTexture)>,
     mut audio_query: Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
@@ -845,7 +845,7 @@ fn play_vn(
         if !view_res.fast && let Some(_) = &view_res.wait_timer {
             return
         }
-        if vn_text.finished() {
+        if vn_text.1.finished() {
             while view_res.avg_offset < view_res.avg_nodes.len() {
                 let node = &view_res.avg_nodes[view_res.avg_offset];
                 info!("{:?}", node);
@@ -914,7 +914,7 @@ fn play_vn(
                 vn_ui_msg.write(VNToogleMsg(false));
             }
         } else {
-            vn_text.skip_to_end();
+            vn_text.1.skip_to_end();
             vn_ui.iter_mut().for_each(|mut v| {
                 *v = Visibility::Visible
             })
@@ -923,20 +923,20 @@ fn play_vn(
 }
 
 fn vn_dialogue(
-    mut text: Single<(&mut Text, &mut VNText)>,
+    mut vn_text: Single<(&mut Text, &mut VNText)>,
     fade_query: Query<&FadeOverlay>,
     time: Res<Time>,
     view_res: Res<ViewRes>,
 ) {
     if view_res.avg && fade_query.count() == 0 {
-        text.1.timer.tick(time.delta());
-        if text.1.timer.just_finished() && text.1.index < text.1.len() {
-            text.1.index += 1;
-            let displayed_text: String = text.1.text
+        vn_text.1.timer.tick(time.delta());
+        if vn_text.1.timer.just_finished() && vn_text.1.index < vn_text.1.len() {
+            vn_text.1.index += 1;
+            let displayed_text: String = vn_text.1.text
                 .chars()
-                .take(text.1.index)
+                .take(vn_text.1.index)
                 .collect();
-            text.0.0 = displayed_text.clone();
+            vn_text.0.0 = displayed_text.clone();
         }
     }
 }
@@ -1098,7 +1098,7 @@ fn default_cmd(
     asset_server: &Res<AssetServer>,
     commands: &mut Commands,
     vn_char: &mut Single<&mut Text, With<VNChar>>,
-    vn_text: &mut Single<&mut VNText>,
+    vn_text: &mut Single<(&mut Text, &mut VNText), Without<VNChar>>,
     vn_ui: &mut Query<&mut Visibility, With<VNGui>>,
     audio_query: &mut Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
     spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine)>,
@@ -1110,7 +1110,8 @@ fn default_cmd(
     // dialogue text
     if let Some(t) = &node.text {
         let text = normalize(t, view_res);
-        vn_text.update(&text);
+        vn_text.0.0 = "".into();
+        vn_text.1.update(&text);
         vn_ui.iter_mut().for_each(|mut v| {
             *v = Visibility::Visible
         });
