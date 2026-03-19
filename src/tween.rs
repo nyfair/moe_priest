@@ -116,7 +116,8 @@ fn parse_ease_type(s: &str) -> EaseType {
         // "easeInCubic" => EaseType::EaseInCubic,
         // "easeOutCubic" => EaseType::EaseOutCubic,
         // "easeInOutCubic" => EaseType::EaseInOutCubic,
-        "linear" | _ => EaseType::Linear,
+        "linear" => EaseType::Linear,
+        _ => EaseType::Linear,
     }
 }
 

@@ -1,4 +1,4 @@
-//! A Bevy plugin for Spine 4.2
+//! A Bevy plugin for Spine 3.8
 //!
 //! Add [`SpinePlugin`] to your Bevy app and spawn a [`SpineBundle`] to get started!
 
