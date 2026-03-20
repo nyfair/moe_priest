@@ -388,7 +388,7 @@ fn setup(
     commands.spawn((
         Visibility::Hidden,
         Sprite {
-            image: asset_server.load("AdvScene.png"),
+            image: asset_server.load(ADVUI),
             color: Color::srgba(1., 1., 1., 0.6),
             ..default()
         },

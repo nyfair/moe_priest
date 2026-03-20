@@ -8,6 +8,17 @@ append = []
 update = []
 remove = []
 
+if os.path.exists('assets/advscene/resources/advscene/sound/voice/ch_30005/general/basic/30005_030.m4a'):
+  api = 'https://gapi.game-monmusu-td.net'
+  assets = 'https://assets.game-monmusu-td.net'
+  ab = 'ver_'
+  prod = ''
+else:
+  api = 'https://api.cthulhu-rog.net'
+  assets = 'https://assets.cthulhu-rog.net'
+  ab = ''
+  prod = '/production'
+
 os.system(f'cp assets/ablist.json {os.environ["TEMP"]}/ablist.json')
 with open('assets/ablist.json') as fd:
   res = json.load(fd)
@@ -17,11 +28,11 @@ with open('assets/ablist.json') as fd:
 headers = {
   'Content-Type': 'application/json',
 }
-req = request.Request('https://gapi.game-monmusu-td.net/api/asset_bundle/version', headers = headers)
+req = request.Request(f'{api}/api/asset_bundle/version', headers = headers)
 resp = request.urlopen(req, '{"cvr":"1","provider":"dmm"}'.encode())
 x = json.loads(resp.read())
 ver = x['data']['version']
-ablist = f'https://assets.game-monmusu-td.net/assetbundles/ver_{ver}/webgl_r18/ablist.json'
+ablist = f'{assets}/assetbundles/{ab}{ver}/webgl_r18/ablist.json'
 f = request.urlopen(ablist)
 raw = f.read()
 with open('assets/ablist.json', 'wb') as fd:
@@ -30,7 +41,7 @@ res = json.loads(raw)
 
 for i in res['data']:
   key = f'{i["hash"]}{i["path"]}'
-  asset = f'https://assets.game-monmusu-td.net/assetbundles/ver_{res["baseVersion"]}/webgl_r18/{key}'
+  asset = f'{assets}/assetbundles{prod}/ver_{res["baseVersion"]}/webgl_r18/{key}'
   new[key] = i['crc']
   if key not in old:
     append.append(asset)
