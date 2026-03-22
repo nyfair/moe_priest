@@ -872,10 +872,12 @@ fn play_vn(
                     Some("LayerOff") => {
                         layer_off_cmd(node, &mut commands, &mut texture_query, &mut spine_query);
                     }
-                    Some(f @ "Se") | Some(f @ "Bgm") | Some(f @ "Ambience") => {
+                    Some(f @ "Se") | Some(f @ "Bgm") | Some(f @ "Ambience")
+                    | Some(f @ "HSe") | Some(f @ "BgVoice") => {
                         sound_cmd(f, node, &asset_server, &mut commands, &mut audio_query, &view_res);
                     }
-                    Some(f @ "StopSe") | Some(f @ "StopBgm") | Some(f @ "StopAmbience") => {
+                    Some(f @ "StopSe") | Some(f @ "StopBgm") | Some(f @ "StopAmbience")
+                    | Some(f @ "StopHSe") | Some(f @ "StopBgVoice") => {
                         stop_sound_item_cmd(f, node, &mut commands, &mut audio_query, false);
                     }
                     Some("Voice") => {
@@ -1362,7 +1364,13 @@ fn sound_cmd(
     audio_query: &mut Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
     view_res: &ResMut<ViewRes>,
 ) {
-    let sound = view_res.vn.sound.get(str!(node.arg1));
+    let sound = match f {
+        "BgVoice" => Some(&utage4::SoundEntry{
+            file_name: node.voice.clone().map(|v| v.to_lowercase() + ".m4a"),
+            ..default()
+        }),
+        _ => view_res.vn.sound.get(str!(node.arg1)),
+    };
     if let Some(sound) = sound {
         f32!(volume = (node.arg3.as_deref()).or(sound.volume.as_deref()), 1.);
         let file = str!(sound.file_name);
@@ -1370,6 +1378,8 @@ fn sound_cmd(
             "Se" => (SE, AudioType::Se, PlaybackMode::Despawn),
             "Bgm" => (BGM, AudioType::Bgm, PlaybackMode::Loop),
             "Ambience" => (AMBIENCE, AudioType::Ambience, PlaybackMode::Loop),
+            "HSe" => (SE, AudioType::Se, PlaybackMode::Loop),
+            "BgVoice" => (VOICE, AudioType::Se, PlaybackMode::Loop),
             _ => return
         };
         match node.arg2.as_deref() {
@@ -1396,7 +1406,7 @@ fn sound_cmd(
             VNAudio(audio_type, str!(node.arg1).into()),
             AudioPlayer::new(
                 // replace file extension to m4a
-                asset_server.load(format!("{}{}.m4a", audio_path, &file[.. file.len() - 4]))
+                asset_server.load(format!("{}{}.m4a", audio_path, &file[.. file.len() - 4].to_lowercase()))
             ),
             PlaybackSettings {
                 mode: loop_type,
@@ -1416,7 +1426,7 @@ fn stop_sound_item_cmd(
 ) {
     f32!(fade_time = node.arg6, 0.2);
     let audio_type = match f {
-        "StopSe" => Some(AudioType::Se),
+        "StopSe" | "StopHSe" | "StopBgVoice" => Some(AudioType::Se),
         "StopBgm" => Some(AudioType::Bgm),
         "StopAmbience" => Some(AudioType::Ambience),
         _ => None
@@ -1484,7 +1494,7 @@ fn voice_cmd(
         commands.spawn((
             VNAudio(AudioType::Voice, "".into()),
             AudioPlayer::new(
-                asset_server.load(format!("{}{}.m4a", VOICE, voice))
+                asset_server.load(format!("{}{}.m4a", VOICE, voice.to_lowercase()))
             ),
             PlaybackSettings {
                 mode: loop_type,

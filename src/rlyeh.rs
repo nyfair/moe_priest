@@ -9,8 +9,6 @@ const ADVUI: &str = "AdvScene.png";
 const MAXCHARA: u128 = 99;
 const FBCHARA: u8 = 28;
 
-// HSe StopHSe BgVoice StopBgVoice
-
 fn get_intro() -> String {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
     let mut seed = nanos;
