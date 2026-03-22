@@ -10,22 +10,22 @@ extern "C" {
 
     fn spine_memcpy_38(__dest: *mut c_void, __src: *const c_void, __n: size_t) -> *mut c_void;
     fn spine_memmove_38(__dest: *mut c_void, __src: *const c_void, __n: size_t) -> *mut c_void;
-    fn acosf(_: c_float) -> c_float;
-    fn atan2f(_: c_float, _: c_float) -> c_float;
+    fn spine_acosf_38(_: c_float) -> c_float;
+    fn spine_atan2f_38(_: c_float, _: c_float) -> c_float;
     fn spine_memset_38(__s: *mut c_void, __c: c_int, __n: size_t) -> *mut c_void;
-    fn cosf(_: c_float) -> c_float;
-    fn sinf(_: c_float) -> c_float;
+    fn spine_cosf_38(_: c_float) -> c_float;
+    fn spine_sinf_38(_: c_float) -> c_float;
     fn spine_strcasecmp_38(__s1: *const c_char, __s2: *const c_char) -> c_int;
     fn spine_strcpy_38(__dest: *mut c_char, __src: *const c_char) -> *mut c_char;
     fn spine_strncat_38(__dest: *mut c_char, __src: *const c_char, __n: size_t) -> *mut c_char;
     fn spine_strcmp_38(__s1: *const c_char, __s2: *const c_char) -> c_int;
     fn spine_strncmp_38(__s1: *const c_char, __s2: *const c_char, __n: size_t) -> c_int;
-    fn pow(_: c_double, _: c_double) -> c_double;
+    fn spine_pow_38(_: c_double, _: c_double) -> c_double;
     fn spine_sqrtf_38(__x: c_float) -> c_float;
     fn _spAtlasPage_createTexture_38(self_0: *mut spAtlasPage, path: *const c_char);
     fn _spAtlasPage_disposeTexture_38(self_0: *mut spAtlasPage);
     fn _spUtil_readFile_38(path: *const c_char, length: *mut c_int) -> *mut c_char;
-    fn fmodf(_: c_float, _: c_float) -> c_float;
+    fn spine_fmodf_38(_: c_float, _: c_float) -> c_float;
     fn spine_strtol_38(__nptr: *const c_char, __endptr: *mut *mut c_char, __base: c_int) -> c_long;
     fn spine_strtoul_38(__nptr: *const c_char, __endptr: *mut *mut c_char, __base: c_int) -> c_ulong;
     fn spine_fclose_38(__stream: *mut FILE) -> c_int;
@@ -1237,9 +1237,9 @@ pub unsafe extern "C" fn spAnimation_apply_38(
     let mut i: c_int = 0;
     let mut n: c_int = (*self_0).timelinesCount;
     if loop_0 != 0 && (*self_0).duration != 0. {
-        time = fmodf(time, (*self_0).duration);
+        time = spine_fmodf_38(time, (*self_0).duration);
         if lastTime > 0 as c_int as c_float {
-            lastTime = fmodf(lastTime, (*self_0).duration);
+            lastTime = spine_fmodf_38(lastTime, (*self_0).duration);
         }
     }
     i = 0 as c_int;
@@ -5533,7 +5533,7 @@ pub unsafe extern "C" fn _spAnimationState_applyRotateTimeline_38(
             }
             dir = current;
         }
-        total = diff + lastTotal - fmodf(lastTotal, 360 as c_int as c_float);
+        total = diff + lastTotal - spine_fmodf_38(lastTotal, 360 as c_int as c_float);
         if dir != current {
             total += 360 as c_int as c_float
                 * (if lastTotal < 0 as c_int as c_float {
@@ -5570,7 +5570,7 @@ pub unsafe extern "C" fn _spAnimationState_queueEvents_38(
     let mut animationStart: c_float = (*entry).animationStart;
     let mut animationEnd: c_float = (*entry).animationEnd;
     let mut duration: c_float = animationEnd - animationStart;
-    let mut trackLastWrapped: c_float = fmodf((*entry).trackLast, duration);
+    let mut trackLastWrapped: c_float = spine_fmodf_38((*entry).trackLast, duration);
     events = (*internal).events;
     i = 0 as c_int;
     n = (*internal).eventsCount;
@@ -5586,7 +5586,7 @@ pub unsafe extern "C" fn _spAnimationState_queueEvents_38(
     }
     if (*entry).loop_0 != 0 {
         complete = (duration == 0 as c_int as c_float
-            || trackLastWrapped > fmodf((*entry).trackTime, duration)) as c_int;
+            || trackLastWrapped > spine_fmodf_38((*entry).trackTime, duration)) as c_int;
     } else {
         complete =
             (animationTime >= animationEnd && (*entry).animationLast < animationEnd) as c_int;
@@ -6033,7 +6033,7 @@ pub unsafe extern "C" fn spTrackEntry_getAnimationTime_38(mut entry: *mut spTrac
         if duration == 0 as c_int as c_float {
             return (*entry).animationStart;
         }
-        return fmodf((*entry).trackTime, duration) + (*entry).animationStart;
+        return spine_fmodf_38((*entry).trackTime, duration) + (*entry).animationStart;
     }
     return if (*entry).trackTime + (*entry).animationStart < (*entry).animationEnd {
         (*entry).trackTime + (*entry).animationStart
@@ -8064,17 +8064,17 @@ pub unsafe extern "C" fn spBone_updateWorldTransformWith_38(
     if parent.is_null() {
         let mut rotationY: c_float = rotation + 90 as c_int as c_float + shearY;
         *(&mut (*self_0).a as *mut c_float) =
-            cosf((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
+            spine_cosf_38((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
                 * scaleX
                 * sx;
         *(&mut (*self_0).b as *mut c_float) =
-            cosf(rotationY * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY * sx;
+            spine_cosf_38(rotationY * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY * sx;
         *(&mut (*self_0).c as *mut c_float) =
-            sinf((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
+            spine_sinf_38((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
                 * scaleX
                 * sy;
         *(&mut (*self_0).d as *mut c_float) =
-            sinf(rotationY * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY * sy;
+            spine_sinf_38(rotationY * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY * sy;
         *(&mut (*self_0).worldX as *mut c_float) = x * sx + (*(*self_0).skeleton).x;
         *(&mut (*self_0).worldY as *mut c_float) = y * sy + (*(*self_0).skeleton).y;
         return;
@@ -8089,15 +8089,15 @@ pub unsafe extern "C" fn spBone_updateWorldTransformWith_38(
         0 => {
             let mut rotationY_0: c_float = rotation + 90 as c_int as c_float + shearY;
             let mut la: c_float =
-                cosf((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
+                spine_cosf_38((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
                     * scaleX;
             let mut lb: c_float =
-                cosf(rotationY_0 * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
+                spine_cosf_38(rotationY_0 * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
             let mut lc: c_float =
-                sinf((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
+                spine_sinf_38((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
                     * scaleX;
             let mut ld: c_float =
-                sinf(rotationY_0 * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
+                spine_sinf_38(rotationY_0 * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
             *(&mut (*self_0).a as *mut c_float) = pa * la + pb * lc;
             *(&mut (*self_0).b as *mut c_float) = pa * lb + pb * ld;
             *(&mut (*self_0).c as *mut c_float) = pc * la + pd * lc;
@@ -8107,15 +8107,15 @@ pub unsafe extern "C" fn spBone_updateWorldTransformWith_38(
         1 => {
             let mut rotationY_1: c_float = rotation + 90 as c_int as c_float + shearY;
             *(&mut (*self_0).a as *mut c_float) =
-                cosf((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
+                spine_cosf_38((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
                     * scaleX;
             *(&mut (*self_0).b as *mut c_float) =
-                cosf(rotationY_1 * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
+                spine_cosf_38(rotationY_1 * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
             *(&mut (*self_0).c as *mut c_float) =
-                sinf((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
+                spine_sinf_38((rotation + shearX) * (3.1415926535897932385f32 / 180 as c_int as c_float))
                     * scaleX;
             *(&mut (*self_0).d as *mut c_float) =
-                sinf(rotationY_1 * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
+                spine_sinf_38(rotationY_1 * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
         }
         2 => {
             let mut s: c_float = pa * pa + pc * pc;
@@ -8136,19 +8136,19 @@ pub unsafe extern "C" fn spBone_updateWorldTransformWith_38(
                 pc /= (*(*self_0).skeleton).scaleY;
                 pb = pc * s;
                 pd = pa * s;
-                prx = atan2f(pc, pa) * (180 as c_int as c_float / 3.1415926535897932385f32);
+                prx = spine_atan2f_38(pc, pa) * (180 as c_int as c_float / 3.1415926535897932385f32);
             } else {
                 pa = 0 as c_int as c_float;
                 pc = 0 as c_int as c_float;
                 prx = 90 as c_int as c_float
-                    - atan2f(pd, pb) * (180 as c_int as c_float / 3.1415926535897932385f32);
+                    - spine_atan2f_38(pd, pb) * (180 as c_int as c_float / 3.1415926535897932385f32);
             }
             rx = rotation + shearX - prx;
             ry = rotation + shearY - prx + 90 as c_int as c_float;
-            la_0 = cosf(rx * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleX;
-            lb_0 = cosf(ry * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
-            lc_0 = sinf(rx * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleX;
-            ld_0 = sinf(ry * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
+            la_0 = spine_cosf_38(rx * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleX;
+            lb_0 = spine_cosf_38(ry * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
+            lc_0 = spine_sinf_38(rx * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleX;
+            ld_0 = spine_sinf_38(ry * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleY;
             *(&mut (*self_0).a as *mut c_float) = pa * la_0 - pb * lc_0;
             *(&mut (*self_0).b as *mut c_float) = pa * lb_0 - pb * ld_0;
             *(&mut (*self_0).c as *mut c_float) = pc * la_0 + pd * lc_0;
@@ -8165,8 +8165,8 @@ pub unsafe extern "C" fn spBone_updateWorldTransformWith_38(
             let mut lb_1: c_float = 0.;
             let mut lc_1: c_float = 0.;
             let mut ld_1: c_float = 0.;
-            cosine = cosf(rotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
-            sine = sinf(rotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
+            cosine = spine_cosf_38(rotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
+            sine = spine_sinf_38(rotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
             za = (pa * cosine + pb * sine) / sx;
             zc = (pc * cosine + pd * sine) / sy;
             s_0 = spine_sqrtf_38(za * za + zc * zc);
@@ -8184,16 +8184,16 @@ pub unsafe extern "C" fn spBone_updateWorldTransformWith_38(
             {
                 s_0 = -s_0;
             }
-            r = 3.1415926535897932385f32 / 2 as c_int as c_float + atan2f(zc, za);
-            zb = cosf(r) * s_0;
-            zd = sinf(r) * s_0;
-            la_1 = cosf(shearX * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleX;
-            lb_1 = cosf(
+            r = 3.1415926535897932385f32 / 2 as c_int as c_float + spine_atan2f_38(zc, za);
+            zb = spine_cosf_38(r) * s_0;
+            zd = spine_sinf_38(r) * s_0;
+            la_1 = spine_cosf_38(shearX * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleX;
+            lb_1 = spine_cosf_38(
                 (90 as c_int as c_float + shearY)
                     * (3.1415926535897932385f32 / 180 as c_int as c_float),
             ) * scaleY;
-            lc_1 = sinf(shearX * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleX;
-            ld_1 = sinf(
+            lc_1 = spine_sinf_38(shearX * (3.1415926535897932385f32 / 180 as c_int as c_float)) * scaleX;
+            ld_1 = spine_sinf_38(
                 (90 as c_int as c_float + shearY)
                     * (3.1415926535897932385f32 / 180 as c_int as c_float),
             ) * scaleY;
@@ -8221,11 +8221,11 @@ pub unsafe extern "C" fn spBone_setToSetupPose_38(mut self_0: *mut spBone) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn spBone_getWorldRotationX_38(mut self_0: *mut spBone) -> c_float {
-    return atan2f((*self_0).c, (*self_0).a) * (180 as c_int as c_float / 3.1415926535897932385f32);
+    return spine_atan2f_38((*self_0).c, (*self_0).a) * (180 as c_int as c_float / 3.1415926535897932385f32);
 }
 #[no_mangle]
 pub unsafe extern "C" fn spBone_getWorldRotationY_38(mut self_0: *mut spBone) -> c_float {
-    return atan2f((*self_0).d, (*self_0).b) * (180 as c_int as c_float / 3.1415926535897932385f32);
+    return spine_atan2f_38((*self_0).d, (*self_0).b) * (180 as c_int as c_float / 3.1415926535897932385f32);
 }
 #[no_mangle]
 pub unsafe extern "C" fn spBone_getWorldScaleX_38(mut self_0: *mut spBone) -> c_float {
@@ -8243,11 +8243,11 @@ pub unsafe extern "C" fn spBone_updateAppliedTransform_38(mut self_0: *mut spBon
         (*self_0).ax = (*self_0).worldX;
         (*self_0).ay = (*self_0).worldY;
         (*self_0).arotation =
-            atan2f((*self_0).c, (*self_0).a) * (180 as c_int as c_float / 3.1415926535897932385f32);
+            spine_atan2f_38((*self_0).c, (*self_0).a) * (180 as c_int as c_float / 3.1415926535897932385f32);
         (*self_0).ascaleX = spine_sqrtf_38((*self_0).a * (*self_0).a + (*self_0).c * (*self_0).c);
         (*self_0).ascaleY = spine_sqrtf_38((*self_0).b * (*self_0).b + (*self_0).d * (*self_0).d);
         (*self_0).ashearX = 0 as c_int as c_float;
-        (*self_0).ashearY = atan2f(
+        (*self_0).ashearY = spine_atan2f_38(
             (*self_0).a * (*self_0).b + (*self_0).c * (*self_0).d,
             (*self_0).a * (*self_0).d - (*self_0).b * (*self_0).c,
         ) * (180 as c_int as c_float / 3.1415926535897932385f32);
@@ -8274,16 +8274,16 @@ pub unsafe extern "C" fn spBone_updateAppliedTransform_38(mut self_0: *mut spBon
         if (*self_0).ascaleX > 0.0001f32 {
             let mut det: c_float = ra * rd - rb * rc;
             (*self_0).ascaleY = det / (*self_0).ascaleX;
-            (*self_0).ashearY = atan2f(ra * rb + rc * rd, det)
+            (*self_0).ashearY = spine_atan2f_38(ra * rb + rc * rd, det)
                 * (180 as c_int as c_float / 3.1415926535897932385f32);
             (*self_0).arotation =
-                atan2f(rc, ra) * (180 as c_int as c_float / 3.1415926535897932385f32);
+                spine_atan2f_38(rc, ra) * (180 as c_int as c_float / 3.1415926535897932385f32);
         } else {
             (*self_0).ascaleX = 0 as c_int as c_float;
             (*self_0).ascaleY = spine_sqrtf_38(rb * rb + rd * rd);
             (*self_0).ashearY = 0 as c_int as c_float;
             (*self_0).arotation = 90 as c_int as c_float
-                - atan2f(rd, rb) * (180 as c_int as c_float / 3.1415926535897932385f32);
+                - spine_atan2f_38(rd, rb) * (180 as c_int as c_float / 3.1415926535897932385f32);
         }
     };
 }
@@ -8325,9 +8325,9 @@ pub unsafe extern "C" fn spBone_worldToLocalRotation_38(
 ) -> c_float {
     let mut sine: c_float = 0.;
     let mut cosine: c_float = 0.;
-    sine = sinf(worldRotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
-    cosine = cosf(worldRotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
-    return atan2f(
+    sine = spine_sinf_38(worldRotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
+    cosine = spine_cosf_38(worldRotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
+    return spine_atan2f_38(
         (*self_0).a * sine - (*self_0).c * cosine,
         (*self_0).d * cosine - (*self_0).b * sine,
     ) * (180 as c_int as c_float / 3.1415926535897932385f32)
@@ -8342,9 +8342,9 @@ pub unsafe extern "C" fn spBone_localToWorldRotation_38(
     let mut sine: c_float = 0.;
     let mut cosine: c_float = 0.;
     localRotation -= (*self_0).rotation - (*self_0).shearX;
-    sine = sinf(localRotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
-    cosine = cosf(localRotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
-    return atan2f(
+    sine = spine_sinf_38(localRotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
+    cosine = spine_cosf_38(localRotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
+    return spine_atan2f_38(
         cosine * (*self_0).c + sine * (*self_0).d,
         cosine * (*self_0).a + sine * (*self_0).b,
     ) * (180 as c_int as c_float / 3.1415926535897932385f32);
@@ -8355,8 +8355,8 @@ pub unsafe extern "C" fn spBone_rotateWorld_38(mut self_0: *mut spBone, mut degr
     let mut b: c_float = (*self_0).b;
     let mut c: c_float = (*self_0).c;
     let mut d: c_float = (*self_0).d;
-    let mut cosine: c_float = cosf(degrees * (3.1415926535897932385f32 / 180 as c_int as c_float));
-    let mut sine: c_float = sinf(degrees * (3.1415926535897932385f32 / 180 as c_int as c_float));
+    let mut cosine: c_float = spine_cosf_38(degrees * (3.1415926535897932385f32 / 180 as c_int as c_float));
+    let mut sine: c_float = spine_sinf_38(degrees * (3.1415926535897932385f32 / 180 as c_int as c_float));
     *(&mut (*self_0).a as *mut c_float) = cosine * a - sine * c;
     *(&mut (*self_0).b as *mut c_float) = cosine * b - sine * d;
     *(&mut (*self_0).c as *mut c_float) = sine * a + cosine * c;
@@ -8719,7 +8719,7 @@ pub unsafe extern "C" fn spIkConstraint_apply1_38(
             sc = pc / (*(*bone).skeleton).scaleY;
             pb = -sc * s * (*(*bone).skeleton).scaleX;
             pd = sa * s * (*(*bone).skeleton).scaleY;
-            rotationIK += atan2f(sc, sa) * (180 as c_int as c_float / 3.1415926535897932385f32);
+            rotationIK += spine_atan2f_38(sc, sa) * (180 as c_int as c_float / 3.1415926535897932385f32);
             current_block_13 = 12618485878637048149;
         }
         _ => {
@@ -8736,7 +8736,7 @@ pub unsafe extern "C" fn spIkConstraint_apply1_38(
         }
         _ => {}
     }
-    rotationIK += atan2f(ty, tx) * (180 as c_int as c_float / 3.1415926535897932385f32);
+    rotationIK += spine_atan2f_38(ty, tx) * (180 as c_int as c_float / 3.1415926535897932385f32);
     if (*bone).ascaleX < 0 as c_int as c_float {
         rotationIK += 180 as c_int as c_float;
     }
@@ -8939,17 +8939,17 @@ pub unsafe extern "C" fn spIkConstraint_apply2_38(
                     + 1 as c_int as c_float;
             }
         }
-        a2 = acosf(cosine) * bendDir as c_float;
+        a2 = spine_acosf_38(cosine) * bendDir as c_float;
         a = l1 + l2 * cosine;
-        b = l2 * sinf(a2);
-        a1 = atan2f(ty * a - tx * b, tx * a + ty * b);
+        b = l2 * spine_sinf_38(a2);
+        a1 = spine_atan2f_38(ty * a - tx * b, tx * a + ty * b);
     } else {
         a = psx * l2;
         b = psy * l2;
         aa = a * a;
         bb = b * b;
         ll = l1 * l1;
-        ta = atan2f(ty, tx);
+        ta = spine_atan2f_38(ty, tx);
         c0 = bb * ll + aa * dd - aa * bb;
         c1 = -(2 as c_int) as c_float * bb * l1;
         c2 = bb - aa;
@@ -8973,8 +8973,8 @@ pub unsafe extern "C" fn spIkConstraint_apply2_38(
             };
             if r * r <= dd {
                 y = spine_sqrtf_38(dd - r * r) * bendDir as c_float;
-                a1 = ta - atan2f(y, r);
-                a2 = atan2f(y / psy, (r - l1) / psx);
+                a1 = ta - spine_atan2f_38(y, r);
+                a2 = spine_atan2f_38(y / psy, (r - l1) / psx);
                 current_block = 4207557037192841971;
             } else {
                 current_block = 13723035087248630346;
@@ -8995,9 +8995,9 @@ pub unsafe extern "C" fn spIkConstraint_apply2_38(
                 let mut maxY: c_float = 0 as c_int as c_float;
                 c0 = -a * l1 / (aa - bb);
                 if c0 >= -(1 as c_int) as c_float && c0 <= 1 as c_int as c_float {
-                    c0 = acosf(c0);
-                    x = a * cosf(c0) + l1;
-                    y = b * sinf(c0);
+                    c0 = spine_acosf_38(c0);
+                    x = a * spine_cosf_38(c0) + l1;
+                    y = b * spine_sinf_38(c0);
                     d = x * x + y * y;
                     if d < minDist {
                         minAngle = c0;
@@ -9013,16 +9013,16 @@ pub unsafe extern "C" fn spIkConstraint_apply2_38(
                     }
                 }
                 if dd <= (minDist + maxDist) / 2 as c_int as c_float {
-                    a1 = ta - atan2f(minY * bendDir as c_float, minX);
+                    a1 = ta - spine_atan2f_38(minY * bendDir as c_float, minX);
                     a2 = minAngle * bendDir as c_float;
                 } else {
-                    a1 = ta - atan2f(maxY * bendDir as c_float, maxX);
+                    a1 = ta - spine_atan2f_38(maxY * bendDir as c_float, maxX);
                     a2 = maxAngle * bendDir as c_float;
                 }
             }
         }
     }
-    let mut os: c_float = atan2f(cy, cx) * s2 as c_float;
+    let mut os: c_float = spine_atan2f_38(cy, cx) * s2 as c_float;
     a1 = (a1 - os) * (180 as c_int as c_float / 3.1415926535897932385f32) + o1 as c_float
         - (*parent).arotation;
     if a1 > 180 as c_int as c_float {
@@ -9154,7 +9154,7 @@ unsafe extern "C" fn parse_number(mut item: *mut Json, mut num: *const c_char) -
             ptr = ptr.offset(1);
             n += 1;
         }
-        result += fraction / pow(10.0f64, n as c_double);
+        result += fraction / spine_pow_38(10.0f64, n as c_double);
     }
     if negative != 0 {
         result = -result;
@@ -9178,9 +9178,9 @@ unsafe extern "C" fn parse_number(mut item: *mut Json, mut num: *const c_char) -
             n_0 += 1;
         }
         if expNegative != 0 {
-            result = result / pow(10 as c_int as c_double, exponent);
+            result = result / spine_pow_38(10 as c_int as c_double, exponent);
         } else {
-            result = result * pow(10 as c_int as c_double, exponent);
+            result = result * spine_pow_38(10 as c_int as c_double, exponent);
         }
     }
     if ptr != num as *mut c_char {
@@ -10219,13 +10219,13 @@ pub unsafe extern "C" fn spPathConstraint_apply_38(mut self_0: *mut spPathConstr
             } else if *spaces.offset((i + 1 as c_int) as isize) == 0 as c_int as c_float {
                 r = *positions.offset((p + 2 as c_int) as isize);
             } else {
-                r = atan2f(dy, dx);
+                r = spine_atan2f_38(dy, dx);
             }
-            r -= atan2f(c, a)
+            r -= spine_atan2f_38(c, a)
                 - offsetRotation * (3.1415926535897932385f32 / 180 as c_int as c_float);
             if tip != 0 {
-                cosine = cosf(r);
-                sine = sinf(r);
+                cosine = spine_cosf_38(r);
+                sine = spine_sinf_38(r);
                 length = (*(*bone_0).data).length;
                 boneX += (length * (cosine * a - sine * c) - dx) * rotateMix;
                 boneY += (length * (sine * a + cosine * c) - dy) * rotateMix;
@@ -10238,8 +10238,8 @@ pub unsafe extern "C" fn spPathConstraint_apply_38(mut self_0: *mut spPathConstr
                 r += 3.1415926535897932385f32 * 2 as c_int as c_float;
             }
             r *= rotateMix;
-            cosine = cosf(r);
-            sine = sinf(r);
+            cosine = spine_cosf_38(r);
+            sine = spine_sinf_38(r);
             *(&mut (*bone_0).a as *mut c_float) = cosine * a - sine * c;
             *(&mut (*bone_0).b as *mut c_float) = cosine * b - sine * d;
             *(&mut (*bone_0).c as *mut c_float) = sine * a + cosine * c;
@@ -10261,9 +10261,9 @@ unsafe extern "C" fn _addBeforePosition(
     let mut y1: c_float = *temp.offset((i + 1 as c_int) as isize);
     let mut dx: c_float = *temp.offset((i + 2 as c_int) as isize) - x1;
     let mut dy: c_float = *temp.offset((i + 3 as c_int) as isize) - y1;
-    let mut r: c_float = atan2f(dy, dx);
-    *out.offset(o as isize) = x1 + p * cosf(r);
-    *out.offset((o + 1 as c_int) as isize) = y1 + p * sinf(r);
+    let mut r: c_float = spine_atan2f_38(dy, dx);
+    *out.offset(o as isize) = x1 + p * spine_cosf_38(r);
+    *out.offset((o + 1 as c_int) as isize) = y1 + p * spine_sinf_38(r);
     *out.offset((o + 2 as c_int) as isize) = r;
 }
 unsafe extern "C" fn _addAfterPosition(
@@ -10277,9 +10277,9 @@ unsafe extern "C" fn _addAfterPosition(
     let mut y1: c_float = *temp.offset((i + 3 as c_int) as isize);
     let mut dx: c_float = x1 - *temp.offset(i as isize);
     let mut dy: c_float = y1 - *temp.offset((i + 1 as c_int) as isize);
-    let mut r: c_float = atan2f(dy, dx);
-    *out.offset(o as isize) = x1 + p * cosf(r);
-    *out.offset((o + 1 as c_int) as isize) = y1 + p * sinf(r);
+    let mut r: c_float = spine_atan2f_38(dy, dx);
+    *out.offset(o as isize) = x1 + p * spine_cosf_38(r);
+    *out.offset((o + 1 as c_int) as isize) = y1 + p * spine_sinf_38(r);
     *out.offset((o + 2 as c_int) as isize) = r;
 }
 unsafe extern "C" fn _addCurvePosition(
@@ -10310,7 +10310,7 @@ unsafe extern "C" fn _addCurvePosition(
     if p == 0 as c_int as c_float || p.is_nan() as i32 != 0 {
         *out.offset(o as isize) = x1;
         *out.offset((o + 1 as c_int) as isize) = y1;
-        *out.offset((o + 2 as c_int) as isize) = atan2f(cy1 - y1, cx1 - x1);
+        *out.offset((o + 2 as c_int) as isize) = spine_atan2f_38(cy1 - y1, cx1 - x1);
         return;
     }
     tt = p * p;
@@ -10328,9 +10328,9 @@ unsafe extern "C" fn _addCurvePosition(
     *out.offset((o + 1 as c_int) as isize) = y;
     if tangents != 0 {
         if (p as c_double) < 0.001f64 {
-            *out.offset((o + 2 as c_int) as isize) = atan2f(cy1 - y1, cx1 - x1);
+            *out.offset((o + 2 as c_int) as isize) = spine_atan2f_38(cy1 - y1, cx1 - x1);
         } else {
-            *out.offset((o + 2 as c_int) as isize) = atan2f(
+            *out.offset((o + 2 as c_int) as isize) = spine_atan2f_38(
                 y - (y1 * uu + cy1 * ut * 2 as c_int as c_float + cy2 * tt),
                 x - (x1 * uu + cx1 * ut * 2 as c_int as c_float + cx2 * tt),
             );
@@ -10433,7 +10433,7 @@ pub unsafe extern "C" fn spPathConstraint_computeWorldPositions_38(
             position += space;
             p = position;
             if closed != 0 {
-                p = fmodf(p, pathLength);
+                p = spine_fmodf_38(p, pathLength);
                 if p < 0 as c_int as c_float {
                     p += pathLength;
                 }
@@ -10686,7 +10686,7 @@ pub unsafe extern "C" fn spPathConstraint_computeWorldPositions_38(
         position += space_0;
         p = position;
         if closed != 0 {
-            p = fmodf(p, pathLength);
+            p = spine_fmodf_38(p, pathLength);
             if p < 0 as c_int as c_float {
                 p += pathLength;
             }
@@ -10881,11 +10881,11 @@ pub unsafe extern "C" fn spPointAttachment_computeWorldRotation_38(
     let mut sine: c_float = 0.;
     let mut x: c_float = 0.;
     let mut y: c_float = 0.;
-    cosine = cosf((*self_0).rotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
-    sine = sinf((*self_0).rotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
+    cosine = spine_cosf_38((*self_0).rotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
+    sine = spine_sinf_38((*self_0).rotation * (3.1415926535897932385f32 / 180 as c_int as c_float));
     x = cosine * (*bone).a + sine * (*bone).b;
     y = cosine * (*bone).c + sine * (*bone).d;
-    return atan2f(y, x) * (180 as c_int as c_float / 3.1415926535897932385f32);
+    return spine_atan2f_38(y, x) * (180 as c_int as c_float / 3.1415926535897932385f32);
 }
 #[no_mangle]
 pub unsafe extern "C" fn _spRegionAttachment_dispose_38(mut attachment: *mut spAttachment) {
@@ -11009,8 +11009,8 @@ pub unsafe extern "C" fn spRegionAttachment_updateOffset_38(mut self_0: *mut spR
     let mut localY2: c_float = localY + (*self_0).regionHeight as c_float * regionScaleY;
     let mut radians: c_float =
         (*self_0).rotation * (3.1415926535897932385f32 / 180 as c_int as c_float);
-    let mut cosine: c_float = cosf(radians);
-    let mut sine: c_float = sinf(radians);
+    let mut cosine: c_float = spine_cosf_38(radians);
+    let mut sine: c_float = spine_sinf_38(radians);
     let mut localXCos: c_float = localX * cosine + (*self_0).x;
     let mut localXSin: c_float = localX * sine;
     let mut localYCos: c_float = localY * cosine + (*self_0).y;
@@ -19029,15 +19029,15 @@ pub unsafe extern "C" fn _spTransformConstraint_applyAbsoluteWorld_38(
             b = (*bone).b;
             c = (*bone).c;
             d = (*bone).d;
-            r = atan2f(tc, ta) - atan2f(c, a) + offsetRotation;
+            r = spine_atan2f_38(tc, ta) - spine_atan2f_38(c, a) + offsetRotation;
             if r > 3.1415926535897932385f32 {
                 r -= 3.1415926535897932385f32 * 2 as c_int as c_float;
             } else if r < -3.1415926535897932385f32 {
                 r += 3.1415926535897932385f32 * 2 as c_int as c_float;
             }
             r *= rotateMix;
-            cosine = cosf(r);
-            sine = sinf(r);
+            cosine = spine_cosf_38(r);
+            sine = spine_sinf_38(r);
             *(&mut (*bone).a as *mut c_float) = cosine * a - sine * c;
             *(&mut (*bone).b as *mut c_float) = cosine * b - sine * d;
             *(&mut (*bone).c as *mut c_float) = sine * a + cosine * c;
@@ -19076,8 +19076,8 @@ pub unsafe extern "C" fn _spTransformConstraint_applyAbsoluteWorld_38(
         if shearMix > 0 as c_int as c_float {
             b = (*bone).b;
             d = (*bone).d;
-            by = atan2f(d, b);
-            r = atan2f(td, tb) - atan2f(tc, ta) - (by - atan2f((*bone).c, (*bone).a));
+            by = spine_atan2f_38(d, b);
+            r = spine_atan2f_38(td, tb) - spine_atan2f_38(tc, ta) - (by - spine_atan2f_38((*bone).c, (*bone).a));
             s = spine_sqrtf_38(b * b + d * d);
             if r > 3.1415926535897932385f32 {
                 r -= 3.1415926535897932385f32 * 2 as c_int as c_float;
@@ -19085,8 +19085,8 @@ pub unsafe extern "C" fn _spTransformConstraint_applyAbsoluteWorld_38(
                 r += 3.1415926535897932385f32 * 2 as c_int as c_float;
             }
             r = by + (r + offsetShearY) * shearMix;
-            *(&mut (*bone).b as *mut c_float) = cosf(r) * s;
-            *(&mut (*bone).d as *mut c_float) = sinf(r) * s;
+            *(&mut (*bone).b as *mut c_float) = spine_cosf_38(r) * s;
+            *(&mut (*bone).d as *mut c_float) = spine_sinf_38(r) * s;
             modified = 1 as c_int;
         }
         if modified != 0 {
@@ -19136,15 +19136,15 @@ pub unsafe extern "C" fn _spTransformConstraint_applyRelativeWorld_38(
             b = (*bone).b;
             c = (*bone).c;
             d = (*bone).d;
-            r = atan2f(tc, ta) + offsetRotation;
+            r = spine_atan2f_38(tc, ta) + offsetRotation;
             if r > 3.1415926535897932385f32 {
                 r -= 3.1415926535897932385f32 * 2 as c_int as c_float;
             } else if r < -3.1415926535897932385f32 {
                 r += 3.1415926535897932385f32 * 2 as c_int as c_float;
             }
             r *= rotateMix;
-            cosine = cosf(r);
-            sine = sinf(r);
+            cosine = spine_cosf_38(r);
+            sine = spine_sinf_38(r);
             *(&mut (*bone).a as *mut c_float) = cosine * a - sine * c;
             *(&mut (*bone).b as *mut c_float) = cosine * b - sine * d;
             *(&mut (*bone).c as *mut c_float) = sine * a + cosine * c;
@@ -19179,7 +19179,7 @@ pub unsafe extern "C" fn _spTransformConstraint_applyRelativeWorld_38(
             modified = 1 as c_int;
         }
         if shearMix > 0 as c_int as c_float {
-            r = atan2f(td, tb) - atan2f(tc, ta);
+            r = spine_atan2f_38(td, tb) - spine_atan2f_38(tc, ta);
             if r > 3.1415926535897932385f32 {
                 r -= 3.1415926535897932385f32 * 2 as c_int as c_float;
             } else if r < -3.1415926535897932385f32 {
@@ -19187,11 +19187,11 @@ pub unsafe extern "C" fn _spTransformConstraint_applyRelativeWorld_38(
             }
             b = (*bone).b;
             d = (*bone).d;
-            r = atan2f(d, b)
+            r = spine_atan2f_38(d, b)
                 + (r - 3.1415926535897932385f32 / 2 as c_int as c_float + offsetShearY) * shearMix;
             s = spine_sqrtf_38(b * b + d * d);
-            *(&mut (*bone).b as *mut c_float) = cosf(r) * s;
-            *(&mut (*bone).d as *mut c_float) = sinf(r) * s;
+            *(&mut (*bone).b as *mut c_float) = spine_cosf_38(r) * s;
+            *(&mut (*bone).d as *mut c_float) = spine_sinf_38(r) * s;
             modified = 1 as c_int;
         }
         if modified != 0 {
@@ -20117,8 +20117,8 @@ pub unsafe extern "C" fn _spSwirlVertexEffect_transform_38(
             radAngle,
             ((*internal).radius - dist) / (*internal).radius,
         );
-        let mut cosine: c_float = cosf(theta);
-        let mut sine: c_float = sinf(theta);
+        let mut cosine: c_float = spine_cosf_38(theta);
+        let mut sine: c_float = spine_sinf_38(theta);
         *positionX = cosine * x - sine * y + (*internal).worldX;
         *positionY = sine * x + cosine * y + (*internal).worldY;
     }
@@ -20307,12 +20307,12 @@ pub unsafe extern "C" fn _spMath_interpolate_38(
 #[no_mangle]
 pub unsafe extern "C" fn _spMath_pow2_apply_38(mut a: c_float) -> c_float {
     if a as c_double <= 0.5f64 {
-        return (pow(
+        return (spine_pow_38(
             (a * 2 as c_int as c_float) as c_double,
             2 as c_int as c_double,
         ) / 2 as c_int as c_double) as c_float;
     }
-    return (pow(
+    return (spine_pow_38(
         ((a - 1 as c_int as c_float) * 2 as c_int as c_float) as c_double,
         2 as c_int as c_double,
     ) / -(2 as c_int) as c_double
@@ -20320,7 +20320,7 @@ pub unsafe extern "C" fn _spMath_pow2_apply_38(mut a: c_float) -> c_float {
 }
 #[no_mangle]
 pub unsafe extern "C" fn _spMath_pow2out_apply_38(mut a: c_float) -> c_float {
-    return (pow(
+    return (spine_pow_38(
         (a - 1 as c_int as c_float) as c_double,
         2 as c_int as c_double,
     ) * -(1 as c_int) as c_double
