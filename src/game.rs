@@ -336,8 +336,8 @@ fn setup(
         avg: false,
         avg_nodes: Vec::new(),
         avg_offset: 0,
-        // <interval=???> to ..., <param=???> for param matching, remove other tags
-        avg_regex: Regex::new(r"(?P<interval><interval=[^>]*>)|(?P<param><param=[^>]*>)|(?P<other><[^>]*>)").unwrap(),
+        // <param=???> for param matching, remove other tags
+        avg_regex: Regex::new(r"(?P<param><param=[^>]*>)|(?P<other><[^>]*>)").unwrap(),
         fast: false,
         auto: false,
         voice_played: false,
@@ -1074,9 +1074,6 @@ fn mouse_object_move(
 
 fn normalize(text: &str, view_res: &ResMut<ViewRes>) -> String {
     view_res.avg_regex.replace_all(text, |caps: &Captures| {
-        if caps.name("interval").is_some() {
-            return "……";
-        }
         if let Some(p) = caps.name("param") {
             let tag = p.as_str();
             let (Some(l), Some(r)) = (tag.find('='), tag.rfind('>')) else {
