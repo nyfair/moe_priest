@@ -5,11 +5,13 @@ pub use bevy_spine42 as bevy_spine;
 
 const ADVFONT: &str = "TT_NPTelopMin-E.ttf";
 const AMBIENCE: &str = "advscene/resources/advscene/sound/ambience/";
-const ADVUI: &str = "AdvScene.png";
+const CHARTEXT: Color = Color::srgb_u8(200, 200, 200);
+const VNTEXT: Color = CHARTEXT;
+
 const MAXCHARA: u128 = 99;
 const FBCHARA: u8 = 28;
 
-fn get_intro() -> String {
+pub fn get_intro() -> String {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
     let mut seed = nanos;
     let s = (nanos % 2) + 1;
@@ -27,6 +29,18 @@ fn get_intro() -> String {
         }
     }
     format!("character/ch_1{:04}/general/vo_general_1{:04}_06{}.m4a", FBCHARA, FBCHARA, s).to_string()
+}
+
+pub fn get_adv_ui(asset_server: &Res<AssetServer>) -> Sprite {
+    Sprite {
+        image: asset_server.load("adv_base.png"),
+        color: Color::srgba(1., 1., 1., 1.),
+        ..default()
+    }
+}
+
+pub fn get_adv_transform() -> Transform {
+    Transform::from_translation(Vec3::new(0., -442., Z_UI as f32)).with_scale(Vec3::ONE)
 }
 
 include!("game.rs");

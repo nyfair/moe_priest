@@ -51,6 +51,23 @@ impl Skeleton {
         }
     }
 
+    pub fn get_color(&self) -> [f32; 4] {
+        unsafe {
+            let c = (*self.c_skeleton.0).color;
+            [c.r, c.g, c.b, c.a]
+        }
+    }
+
+    pub fn set_color(&mut self, r: f32, g: f32, b: f32, a: f32) {
+        unsafe {
+            let ptr = &mut (*self.c_skeleton.0).color;
+            ptr.r = r;
+            ptr.g = g;
+            ptr.b = b;
+            ptr.a = a;
+        }
+    }
+
     pub fn update(&mut self, delta: f32) {
         unsafe {
             spSkeleton_update_42(self.c_ptr(), delta);

@@ -5,17 +5,20 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar, ScrollbarPlugin};
-use bevy::window::{PrimaryWindow, WindowMode, WindowResolution};
+use bevy::window::{PrimaryWindow, WindowMode};
 use bevy_auto_scaling::{AspectRatio, ScalePlugin, ScalingUI, fixed_size_2d};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
+use bevy_tweening::{AnimTarget, Lens, TweenAnim, TweeningPlugin, lens::*};
 use regex::{Regex, Captures};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::read_to_string;
 use std::time::Duration;
 
 use crate::utage4::{self, VNConfig};
-use crate::tween::Tween;
+use crate::tween::{Tween, TweenType};
+
+include!("spine_tween.rs");
 
 const FONT: &str = "FOT-NewRodinProN-EB.otf";
 const HEADTEXT: Color = Color::srgb(0.5, 0.8, 0.7);
@@ -24,8 +27,6 @@ const SELECTTEXT: Color = Color::srgb(0.8, 0.8, 0.8);
 const HOVERBG: Color = Color::srgb(0.1, 0.4, 0.1);
 const VNSPEED: Duration = Duration::from_millis(60);
 const AUTOFORWARD: Duration = Duration::from_millis(1000);
-const CHARTEXT: Color = Color::srgb_u8(237, 221, 192);
-const VNTEXT: Color = Color::srgb_u8(78, 72, 70);
 const Z_CG: i32 = 300;
 const Z_UI: i32 = 993;
 const Z_TEXT: i32 = 996;
@@ -98,6 +99,8 @@ struct ViewRes {
     fast: bool,
     auto: bool,
     voice_played: bool,
+    forwarded: bool,
+    spine_cache: Vec<Entity>,
     wait_timer: Option<Timer>,
     params: HashMap<String, String>
 }
@@ -192,12 +195,86 @@ enum TextureType {
 }
 
 #[derive(Component)]
-// category, label, layer
-struct VNTexture(TextureType, String, String);
+struct AvgTransform {
+    orig: Transform,
+    avg: Transform,
+}
 
 #[derive(Component)]
-// label, animation, layer
-struct VNSpine(String, String, String);
+// category, label, layer, scale, avg_info
+struct VNTexture(TextureType, String, String, f32, AvgTransform);
+
+impl VNTexture {
+    fn move_to(&mut self, to: Vec3, update: bool) -> Vec3 {
+        if update {
+            self.4.avg.translation = to;
+        }
+        vec3(
+            self.4.orig.translation.x + self.3 * to.x,
+            self.4.orig.translation.y + self.3 * to.y,
+            to.z,
+        )
+    }
+
+    fn move_by(&mut self, by: Vec3) -> Vec3 {
+        self.4.avg.translation += by;
+        vec3(
+            self.4.orig.translation.x + self.3 * self.4.avg.translation.x,
+            self.4.orig.translation.y + self.3 * self.4.avg.translation.y,
+            self.4.orig.translation.z + by.z,
+        )
+    }
+
+    fn scale_to(&mut self, to: Vec3, update: bool) -> Vec3 {
+        if update {
+            self.4.avg.scale = to;
+        }
+        self.4.orig.scale * to
+    }
+
+    fn scale_by(&mut self, by: Vec3) -> Vec3 {
+        self.4.avg.scale *= by;
+        self.4.orig.scale * self.4.avg.scale
+    }
+}
+
+#[derive(Component)]
+// label, animation, layer, avg_info
+struct VNSpine(String, String, String, AvgTransform);
+
+impl VNSpine {
+    fn move_to(&mut self, to: Vec3, update: bool) -> Vec3 {
+        if update {
+            self.3.avg.translation = to;
+        }
+        vec3(
+            self.3.orig.translation.x + SPINE_SCALE * to.x,
+            self.3.orig.translation.y + SPINE_SCALE * to.y * 0.5,
+            to.z,
+        )
+    }
+
+    fn move_by(&mut self, by: Vec3) -> Vec3 {
+        self.3.avg.translation += by;
+        vec3(
+            self.3.orig.translation.x + SPINE_SCALE * self.3.avg.translation.x,
+            self.3.orig.translation.y + SPINE_SCALE * self.3.avg.translation.y * 0.5,
+            self.3.orig.translation.z + by.z,
+        )
+    }
+
+    fn scale_to(&mut self, to: Vec3, update: bool) -> Vec3 {
+        if update {
+            self.3.avg.scale = to;
+        }
+        self.3.orig.scale * to
+    }
+
+    fn scale_by(&mut self, by: Vec3) -> Vec3 {
+        self.3.avg.scale *= by;
+        self.3.orig.scale * self.3.avg.scale
+    }
+}
 
 #[derive(PartialEq)]
 enum AudioType {
@@ -233,7 +310,6 @@ pub fn play() {
             WindowPlugin {
                 primary_window: Some(Window {
                     mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
-                    resolution: WindowResolution::new(3840, 2160).with_scale_factor_override(1.75),
                     // present_mode: PresentMode::Immediate,
                     ..default()
                 }),
@@ -246,9 +322,10 @@ pub fn play() {
             ScrollbarPlugin,
             SpinePlugin,
             TransformInterpolationPlugin::interpolate_all(),
+            TweeningPlugin,
         ))
         .insert_resource(ClearColor(Color::NONE))
-        .insert_resource(Time::<Fixed>::from_hz(10.))
+        .insert_resource(Time::<Fixed>::from_hz(30.))
         .insert_resource(ScalingUI {
             width: 3840.,
             height: 2160.,
@@ -266,14 +343,13 @@ pub fn play() {
             choose_mode,
             input_handler,
             toggle_vn,
-            play_vn,
             vn_dialogue,
             fade_overlay,
             fade_sound,
             check_wait,
             check_auto_forward,
         ))
-        .add_systems(FixedUpdate, (mouse_scroll, mouse_object_move))
+        .add_systems(FixedUpdate, (mouse_scroll, mouse_object_move, play_vn))
         .run();
 }
 
@@ -334,13 +410,15 @@ fn setup(
         mode: ListMode::Gallery,
         vn,
         avg: false,
-        avg_nodes: Vec::new(),
+        avg_nodes: vec!(),
         avg_offset: 0,
-        // <param=???> for param matching, remove other tags
-        avg_regex: Regex::new(r"(?P<param><param=[^>]*>)|(?P<other><[^>]*>)").unwrap(),
+        // <interval=???> to ..., <param=???> for param matching, remove other tags
+        avg_regex: Regex::new(r"<interval=(?P<interval>[^>]*)>|<param=(?P<param>[^>]*)>|(?P<other><[^>]*>)").unwrap(),
         fast: false,
         auto: false,
         voice_played: false,
+        forwarded: false,
+        spine_cache: vec!(),
         wait_timer: None,
         params: HashMap::new(),
     });
@@ -387,13 +465,9 @@ fn setup(
 
     commands.spawn((
         Visibility::Hidden,
-        Sprite {
-            image: asset_server.load(ADVUI),
-            color: Color::srgba(1., 1., 1., 0.6),
-            ..default()
-        },
         VNGui,
-        Transform::from_translation(Vec3::new(0., -457., Z_UI as f32)).with_scale(Vec3::ONE),
+        get_adv_ui(&asset_server),
+        get_adv_transform(),
     ));
     commands.spawn((
         Visibility::Hidden,
@@ -621,7 +695,7 @@ fn spine_spawn(
             anime_query.iter().for_each(|entity| {
                 commands.entity(entity).despawn()
             });
-            let mut animation_list = Vec::new();
+            let mut animation_list = vec!();
             if let Ok(mut spine) = spine_query.get_mut(msg.entity) {
                 let Spine(SkeletonController {
                     animation_state,
@@ -826,104 +900,6 @@ fn toggle_vn(
     }
 }
 
-fn play_vn(
-    asset_server: Res<AssetServer>,
-    mut commands: Commands,
-    mut vn_char: Single<&mut Text, With<VNChar>>,
-    mut vn_text: Single<(&mut Text, &mut VNText), Without<VNChar>>,
-    mut vn_ui: Query<&mut Visibility, With<VNGui>>,
-    mut texture_query: Query<(Entity, &VNTexture)>,
-    mut audio_query: Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
-    mut spine_query: Query<(Entity, &mut Spine, &mut VNSpine)>,
-    mut spine_visibility: Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
-    mut vn_msg: MessageReader<VNMsg>,
-    mut vn_ui_msg: MessageWriter<VNToogleMsg>,
-    mut skeletons: ResMut<Assets<SkeletonData>>,
-    mut view_res: ResMut<ViewRes>,
-) {
-    if vn_msg.read().last().is_some() {
-        if !view_res.fast && let Some(_) = &view_res.wait_timer {
-            return
-        }
-        if vn_text.1.finished() {
-            while view_res.avg_offset < view_res.avg_nodes.len() {
-                let node = &view_res.avg_nodes[view_res.avg_offset];
-                info!("{:?}", node);
-                match node.command.as_ref().map(|s| &s[..]) {
-                    None => {
-                        if default_cmd(node, &asset_server, &mut commands, &mut vn_char, &mut vn_text, &mut vn_ui,
-                            &mut audio_query, &mut spine_query, &mut spine_visibility, &mut skeletons, &view_res) {
-                            view_res.avg_offset += 1;
-                            break;
-                        }
-                    }
-                    Some("CharacterOff") => {
-                        character_off_cmd(node, &mut commands, &mut spine_query, true);
-                    }
-                    Some(f @ "Bg") | Some(f @ "BgEvent") | Some(f @ "Sprite") => {
-                        img_cmd(f, node, &asset_server, &mut commands, &view_res);
-                    }
-                    Some(f @ "BgOff") | Some(f @ "BgEventOff") => {
-                        bg_off_cmd(f, &mut commands, &mut texture_query);
-                    }
-                    Some("SpriteOff") => {
-                        sprite_off_cmd(node, &mut commands, &mut texture_query);
-                    }
-                    Some("LayerOff") => {
-                        layer_off_cmd(node, &mut commands, &mut texture_query, &mut spine_query);
-                    }
-                    Some(f @ "Se") | Some(f @ "Bgm") | Some(f @ "Ambience")
-                    | Some(f @ "HSe") | Some(f @ "BgVoice") => {
-                        sound_cmd(f, node, &asset_server, &mut commands, &mut audio_query, &view_res);
-                    }
-                    Some(f @ "StopSe") | Some(f @ "StopBgm") | Some(f @ "StopAmbience")
-                    | Some(f @ "StopHSe") | Some(f @ "StopBgVoice") => {
-                        stop_sound_item_cmd(f, node, &mut commands, &mut audio_query, false);
-                    }
-                    Some("Voice") => {
-                        voice_cmd(node, &asset_server, &mut commands, &mut audio_query);
-                    }
-                    Some("StopVoice") => {
-                        stop_voice_cmd(&mut commands, &mut audio_query);
-                    }
-                    Some("StopSound") => {
-                        stop_sound_cmd(node, &mut commands, &mut audio_query);
-                    }
-                    Some("Wait") => {
-                        f32!(t = node.arg6, 0.1);
-                        view_res.wait_timer = Some(Timer::from_seconds(t, TimerMode::Once));
-                        view_res.avg_offset += 1;
-                        break;
-                    }
-                    Some(f @ "FadeOut") | Some(f @ "FadeIn") => {
-                        fade_overlay_cmd(f, node, &mut commands);
-                    }
-                    Some("Param") => {
-                        if let Some((k, v)) = param_cmd(node) {
-                            view_res.params.insert(k, v);
-                        }
-                    }
-                    Some("Tween") => {
-                        tween_cmd(node, &mut commands);
-                    }
-                    Some(cmd) => warn!("Command {} Unimplemented", cmd)
-                }
-                view_res.avg_offset += 1;
-            }
-            if view_res.avg_offset >= view_res.avg_nodes.len() {
-                view_res.avg = false;
-                view_res.wait_timer = None;
-                vn_ui_msg.write(VNToogleMsg(false));
-            }
-        } else {
-            vn_text.1.skip_to_end();
-            vn_ui.iter_mut().for_each(|mut v| {
-                *v = Visibility::Visible
-            })
-        }
-    }
-}
-
 fn vn_dialogue(
     mut vn_text: Single<(&mut Text, &mut VNText)>,
     fade_query: Query<&FadeOverlay>,
@@ -985,10 +961,18 @@ fn fade_sound(
 
 fn check_wait(
     mut vn_msg: MessageWriter<VNMsg>,
+    spine_query: Query<(), With<Spine>>,
     time: Res<Time>,
     mut view_res: ResMut<ViewRes>,
 ) {
     if view_res.avg {
+        if !view_res.spine_cache.is_empty() {
+            if view_res.spine_cache.iter().all(|&s| spine_query.contains(s)) {
+                view_res.spine_cache = vec!();
+            } else {
+                return;
+            }
+        }
         if view_res.fast {
             view_res.wait_timer = None;
             vn_msg.write(VNMsg);
@@ -1008,7 +992,7 @@ fn check_auto_forward(
     mut view_res: ResMut<ViewRes>,
 ) {
     if view_res.avg && view_res.auto && !view_res.fast && view_res.wait_timer.is_none()
-        && vn_text.finished() {
+        && vn_text.finished() && !view_res.forwarded {
             for (_, _, audio) in audio_query.iter() {
                 if audio.0 == AudioType::Voice {
                     view_res.voice_played = true;
@@ -1021,6 +1005,7 @@ fn check_auto_forward(
             } else {
                 view_res.wait_timer = Some(Timer::new(AUTOFORWARD, TimerMode::Once));
             }
+            view_res.forwarded = true;
         }
 }
 
@@ -1072,22 +1057,142 @@ fn mouse_object_move(
     }
 }
 
+fn play_vn(
+    asset_server: Res<AssetServer>,
+    mut commands: Commands,
+    mut vn_char: Single<&mut Text, With<VNChar>>,
+    mut vn_text: Single<(&mut Text, &mut VNText), Without<VNChar>>,
+    mut vn_ui: Query<&mut Visibility, With<VNGui>>,
+    mut texture_query: Query<(Entity, &VNTexture)>,
+    mut audio_query: Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
+    mut spine_query: Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
+    mut spine_visibility: Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
+    mut vn_msg: MessageReader<VNMsg>,
+    mut vn_ui_msg: MessageWriter<VNToogleMsg>,
+    mut skeletons: ResMut<Assets<SkeletonData>>,
+    mut view_res: ResMut<ViewRes>,
+) {
+    if vn_msg.read().last().is_some() {
+        if !view_res.fast && (view_res.wait_timer.is_some() || !view_res.spine_cache.is_empty()) {
+            return
+        }
+        if vn_text.1.finished() {
+            while view_res.avg_offset < view_res.avg_nodes.len() {
+                let node = &view_res.avg_nodes[view_res.avg_offset];
+                info!("{:?}", node);
+                match node.command.as_ref().map(|s| &s[..]) {
+                    None => {
+                        let (wait, entity) = default_cmd(
+                            node, &asset_server, &mut commands, &mut vn_char, &mut vn_text, &mut vn_ui,
+                            &mut audio_query, &mut spine_query, &mut spine_visibility, &mut skeletons, &view_res);
+                        if let Some(entity) = entity {
+                            view_res.spine_cache.push(entity);
+                        }
+                        if wait {
+                            view_res.avg_offset += 1;
+                            view_res.forwarded = false;
+                            break;
+                        }
+                    }
+                    Some("CharacterOff") => {
+                        character_off_cmd(node, &mut commands, &mut spine_query, true);
+                    }
+                    Some(f @ "Bg") | Some(f @ "BgEvent") | Some(f @ "Sprite") => {
+                        img_cmd(f, node, &asset_server, &mut commands, &view_res);
+                    }
+                    Some(f @ "BgOff") | Some(f @ "BgEventOff") => {
+                        bg_off_cmd(f, &mut commands, &mut texture_query);
+                    }
+                    Some("SpriteOff") => {
+                        sprite_off_cmd(node, &mut commands, &mut texture_query);
+                    }
+                    Some("LayerOff") => {
+                        layer_off_cmd(node, &mut commands, &mut texture_query, &mut spine_query);
+                    }
+                    Some(f @ "Se") | Some(f @ "Bgm") | Some(f @ "Ambience")
+                    | Some(f @ "HSe") | Some(f @ "BgVoice") => {
+                        sound_cmd(f, node, &asset_server, &mut commands, &mut audio_query, &view_res);
+                    }
+                    Some(f @ "StopSe") | Some(f @ "StopBgm") | Some(f @ "StopAmbience")
+                    | Some(f @ "StopHSe") | Some(f @ "StopBgVoice") => {
+                        stop_sound_item_cmd(f, node, &mut commands, &mut audio_query, false);
+                    }
+                    Some("Voice") => {
+                        voice_cmd(node, &asset_server, &mut commands, &mut audio_query);
+                    }
+                    Some("StopVoice") => {
+                        stop_voice_cmd(&mut commands, &mut audio_query);
+                    }
+                    Some("StopSound") => {
+                        stop_sound_cmd(node, &mut commands, &mut audio_query);
+                    }
+                    Some("Wait") => {
+                        f32!(t = node.arg6, 0.1);
+                        view_res.wait_timer = Some(Timer::from_seconds(t, TimerMode::Once));
+                        view_res.avg_offset += 1;
+                        break;
+                    }
+                    Some(f @ "FadeOut") | Some(f @ "FadeIn") => {
+                        fade_overlay_cmd(f, node, &mut commands);
+                    }
+                    Some("Param") => {
+                        if let Some((k, v)) = param_cmd(node) {
+                            view_res.params.insert(k, v);
+                        }
+                    }
+                    Some("Tween") => {
+                        if view_res.spine_cache.is_empty() {
+                            tween_cmd(node, &mut commands, &mut spine_query);
+                        } else {
+                            // wait for spine spawn
+                            view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
+                            view_res.forwarded = true;
+                            break;
+                        }
+                    }
+                    Some(cmd) => warn!("Command {} Unimplemented", cmd)
+                }
+                view_res.avg_offset += 1;
+            }
+            if view_res.avg_offset >= view_res.avg_nodes.len() {
+                view_res.avg = false;
+                view_res.wait_timer = None;
+                vn_ui_msg.write(VNToogleMsg(false));
+            }
+        } else {
+            vn_text.1.skip_to_end();
+            vn_ui.iter_mut().for_each(|mut v| {
+                *v = Visibility::Visible
+            })
+        }
+    }
+}
+
 fn normalize(text: &str, view_res: &ResMut<ViewRes>) -> String {
     view_res.avg_regex.replace_all(text, |caps: &Captures| {
-        if let Some(p) = caps.name("param") {
-            let tag = p.as_str();
-            let (Some(l), Some(r)) = (tag.find('='), tag.rfind('>')) else {
-                return "";
-            };
-            if (l + 1) >= r {
-                return "";
-            }
-            let key = &tag[(l + 1)..r];
-            return view_res.params.get(key).map(String::as_str).or_else(|| {
-                view_res.vn.param.get(key).and_then(|param| param.value.as_deref())
-                }).unwrap_or("");
+        if let Some(p) = caps.name("interval") {
+            let key = p.as_str();
+            return key.parse::<f32>()
+                .map(|num| (num / VNSPEED.as_secs_f32()).ceil())
+                .map(|count| {
+                    if count > 0.0 {
+                        "\u{200c}".repeat(count as usize)
+                    } else {
+                        String::new()
+                    }
+                })
+                .unwrap_or_default();
+        } else if let Some(p) = caps.name("param") {
+            let key = p.as_str();
+            return view_res.params.get(key)
+                .map(ToString::to_string)
+                .or_else(|| {
+                    view_res.vn.param.get(key)
+                        .and_then(|param| param.value.as_ref().map(ToString::to_string))
+                })
+                .unwrap_or_default();
         }
-        ""
+        String::new()
     }).into_owned()
 }
 
@@ -1099,12 +1204,13 @@ fn default_cmd(
     vn_text: &mut Single<(&mut Text, &mut VNText), Without<VNChar>>,
     vn_ui: &mut Query<&mut Visibility, With<VNGui>>,
     audio_query: &mut Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine)>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
     spine_visibility: &mut Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
     skeletons: &mut ResMut<Assets<SkeletonData>>,
     view_res: &ResMut<ViewRes>,
-) -> bool {
+) -> (bool, Option<Entity>) {
     let mut wait = false;
+    let mut spine_entity = None;
     // dialogue text
     if let Some(t) = &node.text {
         let text = normalize(t, view_res);
@@ -1144,7 +1250,7 @@ fn default_cmd(
             vn_char.0 = char_name.into();
         }
         let mut spine_spawned = false;
-        spine_query.iter_mut().for_each(|(e, mut spine, mut s)| {
+        spine_query.iter_mut().for_each(|(e, mut spine, mut s, _)| {
             if s.0 == char_name {
                 spine_spawned = true;
                 s.1 = motion.into();
@@ -1186,14 +1292,19 @@ fn default_cmd(
                             )
                         };
                         let skeleton_handle = skeletons.add(skeleton);
-                        let entity = commands.spawn((
+                        spine_entity = Some(commands.spawn((
                             SkeletonDataHandle(skeleton_handle.clone()),
-                            // ignore y axis scale
-                            Transform::from_xyz((x + f32!(off_x, 0.)) * SPINE_SCALE, y + f32!(off_y, 0.), z)
+                            Transform::from_xyz((x + f32!(off_x, 0.)) * SPINE_SCALE,
+                                                (y + f32!(off_y, 0.)) * SPINE_SCALE * 0.5, z)
                                 .with_scale(Vec3::new(scale_x * SPINE_SCALE, scale_y * SPINE_SCALE, 1.)),
-                        )).id();
-                        commands.entity(entity).insert(
-                            VNSpine(char_name.into(), motion.into(), str!(node.arg3).into()));
+                            VNSpine(char_name.into(), motion.into(), str!(node.arg3).into(),
+                                AvgTransform {
+                                    orig: Transform::from_xyz(x * SPINE_SCALE, y * SPINE_SCALE * 0.5, z)
+                                            .with_scale(Vec3::new(scale_x * SPINE_SCALE, scale_y * SPINE_SCALE, 1.)),
+                                    avg: Transform::from_xyz(f32!(off_x, 0.), f32!(off_y, 0.), z).with_scale(Vec3::ONE)
+                                }
+                            )
+                        )).id());
                     }
                 }
             }
@@ -1201,7 +1312,7 @@ fn default_cmd(
     } else {
         vn_char.0 = char_name.into();
     }
-    wait
+    (wait, spine_entity)
 }
 
 fn fade_overlay_cmd(
@@ -1234,6 +1345,9 @@ fn img_cmd(
     commands: &mut Commands,
     view_res: &ResMut<ViewRes>,
 ) {
+    /* Texture types in the reference sheet may differ from their usage in scripts.
+    For example, a background (BG) might function as an sprite image in-game.
+    Use the script's type for processing logic, but refer to the reference sheet for asset lookups. */
     // type for ecs query
     let (real_type, label_name) = match f {
         "Bg" => (TextureType::Bg, str!(node.arg1)),
@@ -1250,7 +1364,7 @@ fn img_cmd(
             Some("Sprite") => "Sprite",
             _ => f,
         };
-        let (img_path, scale_factor) = match texture_type {
+        let (img_path, scale) = match texture_type {
             "Bg" => (BG, BG_SCALE),
             "BgEvent" => (EVENT, EVENT_SCALE),
             "Sprite" => (SPRITE, SPRITE_SCALE),
@@ -1268,9 +1382,14 @@ fn img_cmd(
                 image: asset_server.load(format!("{}{}", img_path, str!(texture.file_name))),
                 ..default()
             },
-            VNTexture(real_type, str!(node.arg1).into(), str!(node.arg3).into()),
-            Transform::from_xyz((x + f32!(off_x, 0.)) * scale_factor, (y + f32!(off_y, 0.)) * scale_factor, z)
-                .with_scale(Vec3::new(scale_x * scale_factor, scale_y * scale_factor, 1.)),
+            VNTexture(real_type, str!(node.arg1).into(), str!(node.arg3).into(), scale,
+                AvgTransform {
+                    orig: Transform::from_xyz(x * scale, y * scale, z)
+                            .with_scale(Vec3::new(scale_x * scale, scale_y * scale, 1.)),
+                    avg: Transform::from_xyz(f32!(off_x, 0.), f32!(off_y, 0.), z).with_scale(Vec3::ONE)
+                }),
+            Transform::from_xyz((x + f32!(off_x, 0.)) * scale, (y + f32!(off_y, 0.)) * scale, z)
+                .with_scale(Vec3::new(scale_x * scale, scale_y * scale, 1.)),
         ));
     }
 }
@@ -1278,7 +1397,7 @@ fn img_cmd(
 fn character_off_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine)>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
     match_label: bool,
 ) {
     spine_query.iter_mut()
@@ -1340,7 +1459,7 @@ fn layer_off_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
     texture_query: &mut Query<(Entity, &VNTexture)>,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine)>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
 ) {
     character_off_cmd(node, commands, spine_query, false);
     texture_query.iter_mut()
@@ -1523,12 +1642,122 @@ fn param_cmd(node: &utage4::Node) -> Option<(String, String)> {
 
 fn tween_cmd(
     node: &utage4::Node,
-    _commands: &mut Commands,
+    commands: &mut Commands,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
 ) {
-    if let Some(_tween) = Tween::new(node) {
-
+    // MessageWindow = VNGui
+    // Graphics = VNSpine + VNTexture
+    // Camera = VNGui + VNSpine + VNTexture
+    if let Some(t) = Tween::new(node) {
+        macro_rules! absxyz {
+            ($p:expr) => {
+                Vec3::new(
+                    t.params.x.unwrap_or($p),
+                    t.params.y.unwrap_or($p),
+                    t.params.z.unwrap_or($p),
+                )
+            };
+        }
+        macro_rules! relxyz {
+            ($p:expr) => {
+                Vec3::new(
+                    t.params.x.unwrap_or($p.x),
+                    t.params.y.unwrap_or($p.y),
+                    t.params.z.unwrap_or($p.z),
+                )
+            };
+        }
+        spine_query.iter_mut()
+            .filter(|x| ["Graphics", "Camera"].contains(&t.target.as_str()) || t.target == x.2.0)
+            .for_each(|mut x| {
+                macro_rules! tween {
+                    ($lens:ident, $s:ty, $start:expr, $end:expr) => {{
+                        let tween = bevy_tweening::Tween::new(
+                            t.ease_type,
+                            t.params.time,
+                            $lens { start: $start, end: $end },
+                        ).with_repeat_count(t.loop_count).with_repeat_strategy(t.loop_type);
+                        commands.spawn((
+                            TweenAnim::new(tween),
+                            AnimTarget::component::<$s>(x.0),
+                        ))
+                    }};
+                }
+                match t.tween_type {
+                    TweenType::MoveTo => {
+                        let avg_end = relxyz!(x.2.3.avg.translation);
+                        let end = x.2.move_to(avg_end, true);
+                        tween!(TransformPositionLens, Transform, x.3.translation, end);
+                    },
+                    TweenType::MoveFrom => {
+                        let avg_start = relxyz!(x.2.3.avg.translation);
+                        let start = x.2.move_to(avg_start, false);
+                        tween!(TransformPositionLens, Transform, start, x.3.translation);
+                    },
+                    TweenType::MoveBy | TweenType::MoveAdd => {
+                        let move_by = absxyz!(0.);
+                        let end = x.2.move_by(move_by);
+                        tween!(TransformPositionLens, Transform, x.3.translation, end);
+                    },
+                    TweenType::RotateTo | TweenType::RotateFrom => {
+                        let (rx, ry, rz) = x.3.rotation.to_euler(EulerRot::XYZ);
+                        let end_x = t.params.x.map(|v| v.to_radians()).unwrap_or(rx);
+                        let end_y = t.params.y.map(|v| v.to_radians()).unwrap_or(ry);
+                        let end_z = t.params.z.map(|v| v.to_radians()).unwrap_or(rz);
+                        let end = Quat::from_euler(EulerRot::XYZ, end_x, end_y, end_z);
+                        if t.tween_type == TweenType::RotateTo {
+                            tween!(TransformRotationLens, Transform, x.3.rotation, end);
+                        } else {
+                            tween!(TransformRotationLens, Transform, end, x.3.rotation);
+                        }
+                    },
+                    TweenType::RotateBy | TweenType::RotateAdd => {
+                        let dx = t.params.x.map(|v| v.to_radians()).unwrap_or(0.);
+                        let dy = t.params.y.map(|v| v.to_radians()).unwrap_or(0.);
+                        let dz = t.params.z.map(|v| v.to_radians()).unwrap_or(0.);
+                        let d = Quat::from_euler(EulerRot::XYZ, dx, dy, dz);
+                        tween!(TransformRotationLens, Transform, x.3.rotation, x.3.rotation * d);
+                    },
+                    TweenType::ScaleTo => {
+                        let avg_end = relxyz!(x.2.3.avg.scale);
+                        let end = x.2.scale_to(avg_end, true);
+                        tween!(TransformScaleLens, Transform, x.3.scale, end);
+                    },
+                    TweenType::ScaleFrom => {
+                        let avg_start = relxyz!(x.2.3.avg.scale);
+                        let start = x.2.scale_to(avg_start, false);
+                        tween!(TransformScaleLens, Transform, start, x.3.scale);
+                    },
+                    TweenType::ScaleBy | TweenType::ScaleAdd => {
+                        let scale_by = absxyz!(1.);
+                        let end = x.2.scale_by(scale_by);
+                        tween!(TransformScaleLens, Transform, x.3.scale, end);
+                    },
+                    TweenType::ColorTo | TweenType::ColorFrom => {
+                        let start = Color::from(Srgba::from_f32_array(x.1.skeleton.get_color()));
+                        let end = Color::Srgba({
+                            let mut c = t.params.color.as_deref().and_then(
+                                |s| Srgba::hex(s).ok()).unwrap_or(Srgba::WHITE);
+                            if let Some(v) = t.params.r { c.red = v }
+                            if let Some(v) = t.params.g { c.green = v }
+                            if let Some(v) = t.params.b { c.blue = v }
+                            if let Some(v) = t.params.a { c.alpha = v }
+                            if let Some(v) = t.params.alpha { c.alpha = v }
+                            c
+                        });
+                        if t.tween_type == TweenType::ColorTo {
+                            tween!(SpineColorLens, Spine, start, end);
+                        } else {
+                            tween!(SpineColorLens, Spine, end, start);
+                        }
+                    },
+                    _ => {
+                        warn!("Unfinished tween type: {:?}", node.arg2)
+                    },
+                };
+            }
+        )
     } else {
         warn!("Unimplemented tween type: {:?}", node.arg2);
     }
-
 }
