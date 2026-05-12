@@ -5,7 +5,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar, ScrollbarPlugin};
-use bevy::window::{PrimaryWindow, WindowMode};
+use bevy::window::{PrimaryWindow, WindowMode, WindowResolution};
 use bevy_auto_scaling::{AspectRatio, ScalePlugin, ScalingUI, fixed_size_2d};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
@@ -311,6 +311,7 @@ pub fn play() {
                 primary_window: Some(Window {
                     mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
                     // present_mode: PresentMode::Immediate,
+                    resolution: WindowResolution::new(3840, 2160).with_scale_factor_override(1.),
                     ..default()
                 }),
                 ..default()
@@ -444,7 +445,7 @@ fn setup(
                 ModeMenu,
                 TextFont {
                     font: asset_server.load(FONT),
-                    font_size: 24.,
+                    font_size: 42.,
                     ..default()
                 },
                 TextColor(HEADTEXT),
@@ -482,7 +483,7 @@ fn setup(
         VNChar,
         TextFont {
             font: asset_server.load(ADVFONT),
-            font_size: 32.,
+            font_size: 56.,
             ..default()
         },
         TextColor(CHARTEXT),
@@ -500,7 +501,7 @@ fn setup(
         VNText::new(),
         TextFont {
             font: asset_server.load(ADVFONT),
-            font_size: 32.,
+            font_size: 56.,
             ..default()
         },
         TextColor(VNTEXT),
@@ -550,7 +551,7 @@ fn list_scene(
                 Text::new("Select Scenario"),
                 TextFont {
                     font: asset_server.load(FONT),
-                    font_size: 24.,
+                    font_size: 42.,
                     ..default()
                 },
                 TextColor(HEADTEXT),
@@ -583,7 +584,7 @@ fn list_scene(
                             SceneMenu,
                             TextFont {
                                 font: asset_server.load(FONT),
-                                font_size: 20.,
+                                font_size: 35.,
                                 ..default()
                             },
                             TextColor(LISTTEXT),
@@ -724,7 +725,7 @@ fn spine_spawn(
                     Text::new("Select Action"),
                     TextFont {
                         font: asset_server.load(FONT),
-                        font_size: 24.,
+                        font_size: 42.,
                         ..default()
                     },
                     TextColor(HEADTEXT),
@@ -737,7 +738,7 @@ fn spine_spawn(
                         AnimeMenu,
                         TextFont {
                             font: asset_server.load(FONT),
-                            font_size: 20.,
+                            font_size: 35.,
                             ..default()
                         },
                         TextColor(LISTTEXT),
