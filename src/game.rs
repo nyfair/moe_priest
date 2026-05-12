@@ -4,6 +4,7 @@
 use bevy::audio::{PlaybackMode, Volume};
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
+use bevy::sprite::Anchor;
 use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar, ScrollbarPlugin};
 use bevy::window::{PrimaryWindow, WindowMode, WindowResolution};
 use bevy_auto_scaling::{AspectRatio, ScalePlugin, ScalingUI, fixed_size_2d};
@@ -473,38 +474,34 @@ fn setup(
     commands.spawn((
         Visibility::Hidden,
         ZIndex(Z_TEXT),
-        Node {
-            top: Val::Percent(78.),
-            left: Val::Percent(24.),
-            ..default()
-        },
-        Text::new(""),
+        Text2d::new(""),
+        TextLayout::new_with_justify(Justify::Left),
+        Anchor::CENTER_LEFT,
         VNGui,
         VNChar,
         TextFont {
             font: asset_server.load(ADVFONT),
-            font_size: 56.,
+            font_size: 136.,
             ..default()
         },
         TextColor(CHARTEXT),
+        Transform::from_translation(Vec3::new(-572., -366., Z_UI as f32)).with_scale(Vec3::ONE / 4.),
     ));
     commands.spawn((
         Visibility::Hidden,
         ZIndex(Z_TEXT),
-        Node {
-            top: Val::Percent(84.),
-            left: Val::Percent(25.),
-            ..default()
-        },
-        Text::new(""),
+        Text2d::new(""),
+        TextLayout::new_with_justify(Justify::Left),
+        Anchor::TOP_LEFT,
         VNGui,
         VNText::new(),
         TextFont {
             font: asset_server.load(ADVFONT),
-            font_size: 56.,
+            font_size: 136.,
             ..default()
         },
         TextColor(VNTEXT),
+        Transform::from_translation(Vec3::new(-550., -420., Z_UI as f32)).with_scale(Vec3::ONE / 4.),
     ));
 }
 
@@ -869,7 +866,7 @@ fn toggle_vn(
     mut commands: Commands,
     mut viewer_ui: Query<&mut Visibility, Without<VNGui>>,
     mut vn_ui: Query<&mut Visibility, With<VNGui>>,
-    mut text: Single<&mut Text, With<VNText>>,
+    mut text: Single<&mut Text2d, With<VNText>>,
     mut vn_text: Single<&mut VNText>,
     despawn_query: Query<Entity, Or<(With<Spine>, With<AnimeMenuList>)>>,
     vn_despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<VNTexture>, (With<VNAudio>, Without<AudioFade>))>>,
@@ -902,7 +899,7 @@ fn toggle_vn(
 }
 
 fn vn_dialogue(
-    mut vn_text: Single<(&mut Text, &mut VNText)>,
+    mut vn_text: Single<(&mut Text2d, &mut VNText)>,
     fade_query: Query<&FadeOverlay>,
     time: Res<Time>,
     view_res: Res<ViewRes>,
@@ -1061,12 +1058,13 @@ fn mouse_object_move(
 fn play_vn(
     asset_server: Res<AssetServer>,
     mut commands: Commands,
-    mut vn_char: Single<&mut Text, With<VNChar>>,
-    mut vn_text: Single<(&mut Text, &mut VNText), Without<VNChar>>,
+    mut vn_char: Single<&mut Text2d, With<VNChar>>,
+    mut vn_text: Single<(&mut Text2d, &mut VNText), Without<VNChar>>,
     mut vn_ui: Query<&mut Visibility, With<VNGui>>,
-    mut texture_query: Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
     mut audio_query: Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
-    mut spine_query: Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
+    mut tex_query: Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), (Without<VNSpine>, Without<VNGui>)>,
+    mut spine_query: Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), (Without<VNTexture>, Without<VNGui>)>,
+    mut gui_query: Query<(Entity, &VNGui, &mut Transform), (Without<VNSpine>, Without<VNTexture>)>,
     mut spine_visibility: Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
     mut vn_msg: MessageReader<VNMsg>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
@@ -1102,13 +1100,13 @@ fn play_vn(
                         img_cmd(f, node, &asset_server, &mut commands, &view_res);
                     }
                     Some(f @ "BgOff") | Some(f @ "BgEventOff") => {
-                        bg_off_cmd(f, &mut commands, &mut texture_query);
+                        bg_off_cmd(f, &mut commands, &mut tex_query);
                     }
                     Some("SpriteOff") => {
-                        sprite_off_cmd(node, &mut commands, &mut texture_query);
+                        sprite_off_cmd(node, &mut commands, &mut tex_query);
                     }
                     Some("LayerOff") => {
-                        layer_off_cmd(node, &mut commands, &mut texture_query, &mut spine_query);
+                        layer_off_cmd(node, &mut commands, &mut tex_query, &mut spine_query);
                     }
                     Some(f @ "Se") | Some(f @ "Bgm") | Some(f @ "Ambience")
                     | Some(f @ "HSe") | Some(f @ "BgVoice") => {
@@ -1143,7 +1141,7 @@ fn play_vn(
                     }
                     Some("Tween") => {
                         if view_res.spine_cache.is_empty() {
-                            tween_cmd(node, &mut commands, &mut spine_query, &mut texture_query);
+                            tween_cmd(node, &mut commands, &mut spine_query, &mut tex_query, &mut gui_query);
                         } else {
                             // wait for spine spawn
                             view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
@@ -1201,11 +1199,11 @@ fn default_cmd(
     node: &utage4::Node,
     asset_server: &Res<AssetServer>,
     commands: &mut Commands,
-    vn_char: &mut Single<&mut Text, With<VNChar>>,
-    vn_text: &mut Single<(&mut Text, &mut VNText), Without<VNChar>>,
+    vn_char: &mut Single<&mut Text2d, With<VNChar>>,
+    vn_text: &mut Single<(&mut Text2d, &mut VNText), Without<VNChar>>,
     vn_ui: &mut Query<&mut Visibility, With<VNGui>>,
     audio_query: &mut Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), (Without<VNTexture>, Without<VNGui>)>,
     spine_visibility: &mut Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
     skeletons: &mut ResMut<Assets<SkeletonData>>,
     view_res: &ResMut<ViewRes>,
@@ -1398,7 +1396,7 @@ fn img_cmd(
 fn character_off_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), (Without<VNTexture>, Without<VNGui>)>,
     match_label: bool,
 ) {
     spine_query.iter_mut()
@@ -1418,14 +1416,14 @@ fn character_off_cmd(
 fn bg_off_cmd(
     f: &str,
     commands: &mut Commands,
-    texture_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
+    tex_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), (Without<VNSpine>, Without<VNGui>)>,
 ) {
     let img_type = match f {
         "BgOff" => TextureType::Bg,
         "BgEventOff" => TextureType::Event,
         _ => return
     };
-    texture_query.iter_mut()
+    tex_query.iter_mut()
         .filter(|x| {
             x.1.0 == img_type
         }).for_each(|(entity, t, _, _)| {
@@ -1438,9 +1436,9 @@ fn bg_off_cmd(
 fn sprite_off_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    texture_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
+    tex_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), (Without<VNSpine>, Without<VNGui>)>,
 ) {
-    texture_query.iter_mut()
+    tex_query.iter_mut()
         .filter(|x| {
             let type_match = x.1.0 == TextureType::Sprite;
             let label_match = match node.arg1.as_deref() {
@@ -1459,11 +1457,11 @@ fn sprite_off_cmd(
 fn layer_off_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    texture_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
+    tex_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), (Without<VNSpine>, Without<VNGui>)>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), (Without<VNTexture>, Without<VNGui>)>,
 ) {
     character_off_cmd(node, commands, spine_query, false);
-    texture_query.iter_mut()
+    tex_query.iter_mut()
         .filter(|x| {
             node.arg1.as_ref().is_none_or(|l| &x.1.2 == l)
         }).for_each(|(entity, t, _, _)| {
@@ -1644,8 +1642,9 @@ fn param_cmd(node: &utage4::Node) -> Option<(String, String)> {
 fn tween_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
-    texture_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), (Without<VNTexture>, Without<VNGui>)>,
+    tex_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), (Without<VNSpine>, Without<VNGui>)>,
+    gui_query: &mut Query<(Entity, &VNGui, &mut Transform), (Without<VNSpine>, Without<VNTexture>)>,
 ) {
     // MessageWindow = VNGui
     // Graphics = VNSpine + VNTexture
@@ -1764,7 +1763,7 @@ fn tween_cmd(
             }
         );
 
-        texture_query.iter_mut()
+        tex_query.iter_mut()
             .filter(|x| ["Graphics", "Camera"].contains(&t.target.as_str()) || t.target == x.1.1)
             .for_each(|mut x| {
                 match t.tween_type {
@@ -1826,7 +1825,35 @@ fn tween_cmd(
                         }
                     },
                     _ => {
-                        warn!("Unfinished tween type: {:?} for spine", node.arg2)
+                        warn!("Unfinished tween type: {:?} for texture", node.arg2)
+                    },
+                };
+            }
+        );
+
+        gui_query.iter_mut()
+            .filter(|_| ["MessageWindow", "Camera"].contains(&t.target.as_str()))
+            .for_each(|x| {
+                match t.tween_type {
+                    TweenType::MoveBy => {
+                        let move_by = absxyz!(0.);
+                        let end = x.2.translation + move_by;
+                        tween!(TransformPositionLens, Transform, x.2.translation, end, x.0);
+                    },
+                    TweenType::RotateBy => {
+                        let dx = t.params.x.map(|v| v.to_radians()).unwrap_or(0.);
+                        let dy = t.params.y.map(|v| v.to_radians()).unwrap_or(0.);
+                        let dz = t.params.z.map(|v| v.to_radians()).unwrap_or(0.);
+                        let d = Quat::from_euler(EulerRot::XYZ, dx, dy, dz);
+                        tween!(TransformRotationLens, Transform, x.2.rotation, x.2.rotation * d, x.0);
+                    },
+                    TweenType::ScaleBy => {
+                        let scale_by = absxyz!(1.);
+                        let end = x.2.scale * scale_by;
+                        tween!(TransformScaleLens, Transform, x.2.scale, end, x.0);
+                    },
+                    _ => {
+                        warn!("Unfinished tween type: {:?} for gui", node.arg2)
                     },
                 };
             }
