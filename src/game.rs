@@ -1064,9 +1064,9 @@ fn play_vn(
     mut vn_char: Single<&mut Text, With<VNChar>>,
     mut vn_text: Single<(&mut Text, &mut VNText), Without<VNChar>>,
     mut vn_ui: Query<&mut Visibility, With<VNGui>>,
-    mut texture_query: Query<(Entity, &VNTexture)>,
+    mut texture_query: Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
     mut audio_query: Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
-    mut spine_query: Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
+    mut spine_query: Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
     mut spine_visibility: Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
     mut vn_msg: MessageReader<VNMsg>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
@@ -1143,7 +1143,7 @@ fn play_vn(
                     }
                     Some("Tween") => {
                         if view_res.spine_cache.is_empty() {
-                            tween_cmd(node, &mut commands, &mut spine_query);
+                            tween_cmd(node, &mut commands, &mut spine_query, &mut texture_query);
                         } else {
                             // wait for spine spawn
                             view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
@@ -1205,7 +1205,7 @@ fn default_cmd(
     vn_text: &mut Single<(&mut Text, &mut VNText), Without<VNChar>>,
     vn_ui: &mut Query<&mut Visibility, With<VNGui>>,
     audio_query: &mut Query<(Entity, &AudioSink, &VNAudio), Without<AudioFade>>,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
     spine_visibility: &mut Query<&mut Visibility, (With<Spine>, Without<VNGui>)>,
     skeletons: &mut ResMut<Assets<SkeletonData>>,
     view_res: &ResMut<ViewRes>,
@@ -1398,7 +1398,7 @@ fn img_cmd(
 fn character_off_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
     match_label: bool,
 ) {
     spine_query.iter_mut()
@@ -1418,7 +1418,7 @@ fn character_off_cmd(
 fn bg_off_cmd(
     f: &str,
     commands: &mut Commands,
-    texture_query: &mut Query<(Entity, &VNTexture)>,
+    texture_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
 ) {
     let img_type = match f {
         "BgOff" => TextureType::Bg,
@@ -1428,7 +1428,7 @@ fn bg_off_cmd(
     texture_query.iter_mut()
         .filter(|x| {
             x.1.0 == img_type
-        }).for_each(|(entity, t)| {
+        }).for_each(|(entity, t, _, _)| {
             info!("remove texture {} with layer {}", t.1, t.2);
             commands.entity(entity).despawn();
         }
@@ -1438,7 +1438,7 @@ fn bg_off_cmd(
 fn sprite_off_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    texture_query: &mut Query<(Entity, &VNTexture)>,
+    texture_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
 ) {
     texture_query.iter_mut()
         .filter(|x| {
@@ -1459,14 +1459,14 @@ fn sprite_off_cmd(
 fn layer_off_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    texture_query: &mut Query<(Entity, &VNTexture)>,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
+    texture_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
 ) {
     character_off_cmd(node, commands, spine_query, false);
     texture_query.iter_mut()
         .filter(|x| {
             node.arg1.as_ref().is_none_or(|l| &x.1.2 == l)
-        }).for_each(|(entity, t)| {
+        }).for_each(|(entity, t, _, _)| {
             info!("remove texture {} with layer {}", t.1, t.2);
             commands.entity(entity).despawn();
         }
@@ -1644,7 +1644,8 @@ fn param_cmd(node: &utage4::Node) -> Option<(String, String)> {
 fn tween_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
-    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform)>,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), Without<VNTexture>>,
+    texture_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), Without<VNSpine>>,
 ) {
     // MessageWindow = VNGui
     // Graphics = VNSpine + VNTexture
@@ -1668,37 +1669,50 @@ fn tween_cmd(
                 )
             };
         }
+        macro_rules! tween {
+            ($lens:ident, $s:ty, $start:expr, $end:expr, $target:expr) => {{
+                let tween = bevy_tweening::Tween::new(
+                    t.ease_type,
+                    t.params.time,
+                    $lens { start: $start, end: $end },
+                ).with_repeat_count(t.loop_count).with_repeat_strategy(t.loop_type);
+                commands.spawn((
+                    TweenAnim::new(tween),
+                    AnimTarget::component::<$s>($target),
+                ))
+            }};
+        }
+        fn calc_color(t: &Tween) -> Color {
+            Color::Srgba({
+                let mut c = t.params.color.as_deref().and_then(
+                    |s| Srgba::hex(s).ok()).unwrap_or(Srgba::WHITE);
+                if let Some(v) = t.params.r { c.red = v }
+                if let Some(v) = t.params.g { c.green = v }
+                if let Some(v) = t.params.b { c.blue = v }
+                if let Some(v) = t.params.a { c.alpha = v }
+                if let Some(v) = t.params.alpha { c.alpha = v }
+                c
+            })
+        }
+
         spine_query.iter_mut()
             .filter(|x| ["Graphics", "Camera"].contains(&t.target.as_str()) || t.target == x.2.0)
             .for_each(|mut x| {
-                macro_rules! tween {
-                    ($lens:ident, $s:ty, $start:expr, $end:expr) => {{
-                        let tween = bevy_tweening::Tween::new(
-                            t.ease_type,
-                            t.params.time,
-                            $lens { start: $start, end: $end },
-                        ).with_repeat_count(t.loop_count).with_repeat_strategy(t.loop_type);
-                        commands.spawn((
-                            TweenAnim::new(tween),
-                            AnimTarget::component::<$s>(x.0),
-                        ))
-                    }};
-                }
                 match t.tween_type {
                     TweenType::MoveTo => {
                         let avg_end = relxyz!(x.2.3.avg.translation);
                         let end = x.2.move_to(avg_end, true);
-                        tween!(TransformPositionLens, Transform, x.3.translation, end);
+                        tween!(TransformPositionLens, Transform, x.3.translation, end, x.0);
                     },
                     TweenType::MoveFrom => {
                         let avg_start = relxyz!(x.2.3.avg.translation);
                         let start = x.2.move_to(avg_start, false);
-                        tween!(TransformPositionLens, Transform, start, x.3.translation);
+                        tween!(TransformPositionLens, Transform, start, x.3.translation, x.0);
                     },
                     TweenType::MoveBy | TweenType::MoveAdd => {
                         let move_by = absxyz!(0.);
                         let end = x.2.move_by(move_by);
-                        tween!(TransformPositionLens, Transform, x.3.translation, end);
+                        tween!(TransformPositionLens, Transform, x.3.translation, end, x.0);
                     },
                     TweenType::RotateTo | TweenType::RotateFrom => {
                         let (rx, ry, rz) = x.3.rotation.to_euler(EulerRot::XYZ);
@@ -1707,9 +1721,9 @@ fn tween_cmd(
                         let end_z = t.params.z.map(|v| v.to_radians()).unwrap_or(rz);
                         let end = Quat::from_euler(EulerRot::XYZ, end_x, end_y, end_z);
                         if t.tween_type == TweenType::RotateTo {
-                            tween!(TransformRotationLens, Transform, x.3.rotation, end);
+                            tween!(TransformRotationLens, Transform, x.3.rotation, end, x.0);
                         } else {
-                            tween!(TransformRotationLens, Transform, end, x.3.rotation);
+                            tween!(TransformRotationLens, Transform, end, x.3.rotation, x.0);
                         }
                     },
                     TweenType::RotateBy | TweenType::RotateAdd => {
@@ -1717,47 +1731,106 @@ fn tween_cmd(
                         let dy = t.params.y.map(|v| v.to_radians()).unwrap_or(0.);
                         let dz = t.params.z.map(|v| v.to_radians()).unwrap_or(0.);
                         let d = Quat::from_euler(EulerRot::XYZ, dx, dy, dz);
-                        tween!(TransformRotationLens, Transform, x.3.rotation, x.3.rotation * d);
+                        tween!(TransformRotationLens, Transform, x.3.rotation, x.3.rotation * d, x.0);
                     },
                     TweenType::ScaleTo => {
                         let avg_end = relxyz!(x.2.3.avg.scale);
                         let end = x.2.scale_to(avg_end, true);
-                        tween!(TransformScaleLens, Transform, x.3.scale, end);
+                        tween!(TransformScaleLens, Transform, x.3.scale, end, x.0);
                     },
                     TweenType::ScaleFrom => {
                         let avg_start = relxyz!(x.2.3.avg.scale);
                         let start = x.2.scale_to(avg_start, false);
-                        tween!(TransformScaleLens, Transform, start, x.3.scale);
+                        tween!(TransformScaleLens, Transform, start, x.3.scale, x.0);
                     },
                     TweenType::ScaleBy | TweenType::ScaleAdd => {
                         let scale_by = absxyz!(1.);
                         let end = x.2.scale_by(scale_by);
-                        tween!(TransformScaleLens, Transform, x.3.scale, end);
+                        tween!(TransformScaleLens, Transform, x.3.scale, end, x.0);
                     },
                     TweenType::ColorTo | TweenType::ColorFrom => {
                         let start = Color::from(Srgba::from_f32_array(x.1.skeleton.get_color()));
-                        let end = Color::Srgba({
-                            let mut c = t.params.color.as_deref().and_then(
-                                |s| Srgba::hex(s).ok()).unwrap_or(Srgba::WHITE);
-                            if let Some(v) = t.params.r { c.red = v }
-                            if let Some(v) = t.params.g { c.green = v }
-                            if let Some(v) = t.params.b { c.blue = v }
-                            if let Some(v) = t.params.a { c.alpha = v }
-                            if let Some(v) = t.params.alpha { c.alpha = v }
-                            c
-                        });
+                        let end = calc_color(&t);
                         if t.tween_type == TweenType::ColorTo {
-                            tween!(SpineColorLens, Spine, start, end);
+                            tween!(SpineColorLens, Spine, start, end, x.0);
                         } else {
-                            tween!(SpineColorLens, Spine, end, start);
+                            tween!(SpineColorLens, Spine, end, start, x.0);
                         }
                     },
                     _ => {
-                        warn!("Unfinished tween type: {:?}", node.arg2)
+                        warn!("Unfinished tween type: {:?} for spine", node.arg2)
                     },
                 };
             }
-        )
+        );
+
+        texture_query.iter_mut()
+            .filter(|x| ["Graphics", "Camera"].contains(&t.target.as_str()) || t.target == x.1.1)
+            .for_each(|mut x| {
+                match t.tween_type {
+                    TweenType::MoveTo => {
+                        let avg_end = relxyz!(x.1.4.avg.translation);
+                        let end = x.1.move_to(avg_end, true);
+                        tween!(TransformPositionLens, Transform, x.2.translation, end, x.0);
+                    },
+                    TweenType::MoveFrom => {
+                        let avg_start = relxyz!(x.1.4.avg.translation);
+                        let start = x.1.move_to(avg_start, false);
+                        tween!(TransformPositionLens, Transform, start, x.2.translation, x.0);
+                    },
+                    TweenType::MoveBy | TweenType::MoveAdd => {
+                        let move_by = absxyz!(0.);
+                        let end = x.1.move_by(move_by);
+                        tween!(TransformPositionLens, Transform, x.2.translation, end, x.0);
+                    },
+                    TweenType::RotateTo | TweenType::RotateFrom => {
+                        let (rx, ry, rz) = x.2.rotation.to_euler(EulerRot::XYZ);
+                        let end_x = t.params.x.map(|v| v.to_radians()).unwrap_or(rx);
+                        let end_y = t.params.y.map(|v| v.to_radians()).unwrap_or(ry);
+                        let end_z = t.params.z.map(|v| v.to_radians()).unwrap_or(rz);
+                        let end = Quat::from_euler(EulerRot::XYZ, end_x, end_y, end_z);
+                        if t.tween_type == TweenType::RotateTo {
+                            tween!(TransformRotationLens, Transform, x.2.rotation, end, x.0);
+                        } else {
+                            tween!(TransformRotationLens, Transform, end, x.2.rotation, x.0);
+                        }
+                    },
+                    TweenType::RotateBy | TweenType::RotateAdd => {
+                        let dx = t.params.x.map(|v| v.to_radians()).unwrap_or(0.);
+                        let dy = t.params.y.map(|v| v.to_radians()).unwrap_or(0.);
+                        let dz = t.params.z.map(|v| v.to_radians()).unwrap_or(0.);
+                        let d = Quat::from_euler(EulerRot::XYZ, dx, dy, dz);
+                        tween!(TransformRotationLens, Transform, x.2.rotation, x.2.rotation * d, x.0);
+                    },
+                    TweenType::ScaleTo => {
+                        let avg_end = relxyz!(x.1.4.avg.scale);
+                        let end = x.1.scale_to(avg_end, true);
+                        tween!(TransformScaleLens, Transform, x.2.scale, end, x.0);
+                    },
+                    TweenType::ScaleFrom => {
+                        let avg_start = relxyz!(x.1.4.avg.scale);
+                        let start = x.1.scale_to(avg_start, false);
+                        tween!(TransformScaleLens, Transform, start, x.2.scale, x.0);
+                    },
+                    TweenType::ScaleBy | TweenType::ScaleAdd => {
+                        let scale_by = absxyz!(1.);
+                        let end = x.1.scale_by(scale_by);
+                        tween!(TransformScaleLens, Transform, x.2.scale, end, x.0);
+                    },
+                    TweenType::ColorTo | TweenType::ColorFrom => {
+                        let end = calc_color(&t);
+                        if t.tween_type == TweenType::ColorTo {
+                            tween!(SpriteColorLens, Sprite, x.3.color, end, x.0);
+                        } else {
+                            tween!(SpriteColorLens, Sprite, end, x.3.color, x.0);
+                        }
+                    },
+                    _ => {
+                        warn!("Unfinished tween type: {:?} for spine", node.arg2)
+                    },
+                };
+            }
+        );
     } else {
         warn!("Unimplemented tween type: {:?}", node.arg2);
     }
