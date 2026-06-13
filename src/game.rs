@@ -1277,7 +1277,7 @@ fn default_cmd(
             if let (Some(l), Some(r)) = (file_name.rfind('/'), file_name.rfind('.')) && l < r {
                 let path = file_name[..l].to_string();
                 if let Some(rr) = path.rfind('/') {
-                    let bundle_name = path[rr+1..].to_string();
+                    let bundle_name = path[rr+1..].to_string().to_lowercase();
                     if let Some(file) = view_res.spines.get(&bundle_name) {
                         let skeleton = if file.ext == "skel" {
                             SkeletonData::new_from_binary(
