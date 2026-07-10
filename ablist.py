@@ -32,7 +32,7 @@ req = request.Request(f'{api}/api/asset_bundle/version', headers = headers)
 resp = request.urlopen(req, '{"cvr":"1","provider":"dmm"}'.encode())
 x = json.loads(resp.read())
 ver = x['data']['version']
-ablist = f'{assets}/assetbundles/{ab}{ver}/webgl_r18/ablist.json'
+ablist = f'{assets}/assetbundles{prod}/{ab}{ver}/webgl_r18/ablist.json'
 f = request.urlopen(ablist)
 raw = f.read()
 with open('assets/ablist.json', 'wb') as fd:
