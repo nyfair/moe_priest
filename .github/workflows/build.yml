@@ -9,13 +9,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target:
-          - x86_64-pc-windows-msvc
-          - aarch64-pc-windows-msvc
+        include:
+          - target: x86_64-pc-windows-msvc
+            archive: windows_x64.7z
+          - target: aarch64-pc-windows-msvc
+            archive: windows_arm64.7z
     steps:
     - name: Prepare
       run: git config --global core.autocrlf false
     - uses: actions/checkout@v6
+    - name: Setup UPX
+      uses: crazy-max/ghaction-upx@v4
+      with:
+        install-only: true
+        version: latest
     - name: Compile
       run: |
         rustup set profile minimal
@@ -23,23 +30,27 @@ jobs:
         rustup update
         cargo build --release --target=${{ matrix.target }}
         move target\${{ matrix.target }}\release\*.exe .
-        7z a ${{ matrix.target }}.7z moe*.exe
+        move moe*.exe td.exe
+        upx --ultra-brute td.exe
+        7z a ${{ matrix.archive }} td.exe
     - name: Upload
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{ matrix.target }}.7z
+        file: ${{ matrix.archive }}
         tag: latest
         overwrite: true
         file_glob: true
+
   build-linux:
-    runs-on: ubuntu-24.04
-    strategy:
-      matrix:
-        target:
-          - x86_64-unknown-linux-gnu
+    runs-on: ubuntu-26.04
     steps:
     - uses: actions/checkout@v4
+    - name: Setup UPX
+      uses: crazy-max/ghaction-upx@v4
+      with:
+        install-only: true
+        version: latest
     - name: Compile
       run: |
         sudo apt-get update && sudo apt-get --assume-yes install libwayland-dev libasound2-dev
@@ -48,23 +59,27 @@ jobs:
         cargo build --release
         mv target/release/* .
         rm *.d
-        tar acf ${{ matrix.target }}.tar.xz moe*
+        mv moe* td
+        upx --ultra-brute td
+        7z a linux_x64.7z td
     - name: Upload
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{ matrix.target }}.tar.xz
+        file: linux_x64.7z
         tag: latest
         overwrite: true
         file_glob: true
+
   build-linux-arm:
-    runs-on: ubuntu-24.04-arm
-    strategy:
-      matrix:
-        target:
-          - aarch64-unknown-linux-gnu
+    runs-on: ubuntu-26.04-arm
     steps:
     - uses: actions/checkout@v4
+    - name: Setup UPX
+      uses: crazy-max/ghaction-upx@v4
+      with:
+        install-only: true
+        version: latest
     - name: Compile
       run: |
         sudo apt-get update && sudo apt-get --assume-yes install libwayland-dev libasound2-dev
@@ -73,12 +88,14 @@ jobs:
         cargo build --release
         mv target/release/* .
         rm *.d
-        tar acf ${{ matrix.target }}.tar.xz moe*
+        mv moe* td
+        upx --ultra-brute td
+        7z a linux_arm64.7z td
     - name: Upload
       uses: svenstaro/upload-release-action@v2
       with:
         repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: ${{ matrix.target }}.tar.xz
+        file: linux_arm64.7z
         tag: latest
         overwrite: true
         file_glob: true
