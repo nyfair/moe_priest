@@ -12,9 +12,9 @@ const MAXCHARA: u128 = 99;
 const FBCHARA: u8 = 28;
 
 pub fn get_intro() -> String {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-    let mut seed = nanos;
-    let s = (nanos % 2) + 1;
+    let micros = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();
+    let mut seed = micros;
+    let s = (micros % 2) + 1;
     for _ in 0..10 {
         // SplitMix64
         seed = seed.wrapping_add(0x9E3779B97F4A7C15);
