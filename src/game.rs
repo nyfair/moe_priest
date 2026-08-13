@@ -591,13 +591,13 @@ fn list_scene(
                 }).id();
                 parent.spawn((
                     Node {
-                        min_width: px(12),
+                        min_width: px(29),
                         ..default()
                     },
                     Scrollbar {
                         orientation: ControlOrientation::Vertical,
                         target: scrollable,
-                        min_thumb_length: 48.,
+                        min_thumb_length: 129.,
                     },
                     Children::spawn(Spawn((
                         Node {
@@ -606,7 +606,7 @@ fn list_scene(
                         },
                         BackgroundColor(HOVERBG),
                         ScrollbarThumb {
-                            border_radius: BorderRadius::all(px(4)),
+                            border_radius: BorderRadius::all(px(8)),
                             border: px(1).all(),
                         },
                     ))),
