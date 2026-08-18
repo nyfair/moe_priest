@@ -10,7 +10,7 @@ use bevy::window::{PrimaryWindow, WindowMode, WindowResolution};
 use bevy_auto_scaling::{AspectRatio, ScalePlugin, ScalingUI, fixed_size_2d};
 use bevy_spine::prelude::*;
 use bevy_transform_interpolation::prelude::*;
-use bevy_tweening::{AnimTarget, Lens, TweenAnim, TweeningPlugin, lens::*};
+use bevy_tweening::{AnimTarget, Lens, TweenAnim, TweenState, TweeningPlugin, lens::*};
 use regex::{Regex, Captures};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::read_to_string;
@@ -103,6 +103,8 @@ struct ViewRes {
     forwarded: bool,
     spine_cache: Vec<Entity>,
     wait_timer: Option<Timer>,
+    pending_effects: u32,
+    effect_wait: bool,
     params: HashMap<String, String>
 }
 
@@ -213,6 +215,32 @@ struct ShakeAnim {
     base_rot: Quat,
     base_scale: Vec3,
     seed: u32,
+}
+
+// marker for effects that require waiting (WaitType != NoWait)
+#[derive(Component)]
+struct WaitEffect;
+
+fn should_wait(wait_type: &Option<String>) -> bool {
+    !wait_type.as_deref().map(str::trim).is_some_and(|s| s == "NoWait")
+}
+
+fn count_effects(
+    mut commands: Commands,
+    tween_query: Query<(Entity, &TweenAnim), With<WaitEffect>>,
+    shake_query: Query<(), (With<ShakeAnim>, With<WaitEffect>)>,
+    fade_query: Query<(), (With<FadeOverlay>, With<WaitEffect>)>,
+    mut view_res: ResMut<ViewRes>,
+) {
+    let mut pending = (shake_query.iter().count() + fade_query.iter().count()) as u32;
+    for (entity, anim) in tween_query.iter() {
+        if anim.tween_state() == TweenState::Completed {
+            commands.entity(entity).remove::<WaitEffect>();
+        } else {
+            pending += 1;
+        }
+    }
+    view_res.pending_effects = pending;
 }
 
 #[derive(PartialEq)]
@@ -363,6 +391,7 @@ pub fn play() {
         .add_message::<VNMsg>()
         .add_systems(Startup, setup)
         .add_systems(Update, (
+            count_effects.before(check_wait),
             toggle_fullscreeen,
             list_scene,
             choose_scene,
@@ -449,6 +478,8 @@ fn setup(
         forwarded: false,
         spine_cache: vec!(),
         wait_timer: None,
+        pending_effects: 0,
+        effect_wait: false,
         params: HashMap::new(),
     });
 
@@ -671,6 +702,8 @@ fn choose_scene(
                         view_res.avg_nodes = book;
                         view_res.avg_offset = 0;
                         view_res.fast = false;
+                        view_res.wait_timer = None;
+                        view_res.effect_wait = false;
                         view_res.params = HashMap::new();
                         vn_ui_msg.write(VNToogleMsg(true));
                     }
@@ -854,6 +887,7 @@ fn input_handler(
     mut vn_ui: Query<&mut Visibility, With<VNGui>>,
     mut vn_ui_msg: MessageWriter<VNToogleMsg>,
     mut vn_msg: MessageWriter<VNMsg>,
+    vn_text: Single<&VNText>,
     button: Res<ButtonInput<MouseButton>>,
     key: Res<ButtonInput<KeyCode>>,
     mut view_res: ResMut<ViewRes>,
@@ -873,11 +907,17 @@ fn input_handler(
     if view_res.avg {
         if button.just_pressed(MouseButton::Left)
         || key.just_pressed(KeyCode::Enter) || key.just_pressed(KeyCode::Space) {
-            vn_msg.write(VNMsg);
+            if view_res.pending_effects > 0 && !view_res.fast && vn_text.finished() {
+                view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
+                view_res.effect_wait = true;
+            } else {
+                vn_msg.write(VNMsg);
+            }
         }
         if key.just_pressed(KeyCode::Escape) {
             view_res.avg = false;
             view_res.wait_timer = None;
+            view_res.effect_wait = false;
             vn_ui_msg.write(VNToogleMsg(false));
         }
         if key.just_released(KeyCode::ControlLeft) || key.just_released(KeyCode::ControlRight) {
@@ -899,7 +939,7 @@ fn toggle_vn(
     mut text: Single<&mut Text2d, With<VNText>>,
     mut vn_text: Single<&mut VNText>,
     despawn_query: Query<Entity, Or<(With<Spine>, With<AnimeMenuList>)>>,
-    vn_despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<VNTexture>, (With<VNAudio>, Without<AudioFade>))>>,
+    vn_despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<VNTexture>, (With<VNAudio>, Without<AudioFade>), With<WaitEffect>)>>,
     mut vn_ui_msg: MessageReader<VNToogleMsg>,
     mut vn_msg: MessageWriter<VNMsg>,
 ) {
@@ -987,6 +1027,7 @@ fn shake_anim(
             transform.rotation = shake.base_rot;
             transform.scale = shake.base_scale;
             commands.entity(entity).remove::<ShakeAnim>();
+            commands.entity(entity).remove::<WaitEffect>();
             return;
         }
         let off = match shake.kind {
@@ -1049,6 +1090,7 @@ fn check_wait(
     mut view_res: ResMut<ViewRes>,
 ) {
     if view_res.avg {
+        let effect_blocked = view_res.effect_wait && view_res.pending_effects > 0 && !view_res.auto;
         if !view_res.spine_cache.is_empty() {
             if view_res.spine_cache.iter().all(|&s| spine_query.contains(s)) {
                 view_res.spine_cache = vec!();
@@ -1060,10 +1102,13 @@ fn check_wait(
             view_res.wait_timer = None;
             vn_msg.write(VNMsg);
         } else if let Some(timer) = &mut view_res.wait_timer {
-            timer.tick(time.delta());
-            if timer.is_finished() {
-                view_res.wait_timer = None;
-                vn_msg.write(VNMsg);
+            if !effect_blocked {
+                timer.tick(time.delta());
+                if timer.is_finished() {
+                    view_res.wait_timer = None;
+                    view_res.effect_wait = false;
+                    vn_msg.write(VNMsg);
+                }
             }
         }
     }
@@ -1218,6 +1263,12 @@ fn play_vn(
                     }
                     Some(f @ "FadeOut") | Some(f @ "FadeIn") => {
                         fade_overlay_cmd(f, node, &mut commands);
+                        if should_wait(&node.wait_type) {
+                            view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
+                            view_res.effect_wait = true;
+                            view_res.avg_offset += 1;
+                            break;
+                        }
                     }
                     Some("Param") => {
                         if let Some((k, v)) = param_cmd(node) {
@@ -1226,10 +1277,22 @@ fn play_vn(
                     }
                     Some("Shake") => {
                         shake_cmd(node, &mut commands, &mut spine_query, &mut tex_query, &mut gui_query);
+                        if should_wait(&node.wait_type) {
+                            view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
+                            view_res.effect_wait = true;
+                            view_res.avg_offset += 1;
+                            break;
+                        }
                     }
                     Some("Tween") => {
                         if view_res.spine_cache.is_empty() {
                             tween_cmd(node, &mut commands, &mut spine_query, &mut tex_query, &mut gui_query);
+                            if should_wait(&node.wait_type) {
+                                view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
+                                view_res.effect_wait = true;
+                                view_res.avg_offset += 1;
+                                break;
+                            }
                         } else {
                             // wait for spine spawn
                             view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
@@ -1413,7 +1476,7 @@ fn fade_overlay_cmd(
         matches!(f, "FadeOut")
     );
     let init_color = overlay.init_color();
-    commands.spawn((
+    let mut cmd = commands.spawn((
         Node {
             width: Val::Percent(100.),
             height: Val::Percent(100.),
@@ -1423,6 +1486,9 @@ fn fade_overlay_cmd(
         ZIndex(Z_FADE),
         overlay,
     ));
+    if should_wait(&node.wait_type) {
+        cmd.insert(WaitEffect);
+    }
 }
 
 fn img_cmd(
@@ -1752,6 +1818,7 @@ fn shake_cmd(
         arg1: node.arg1.clone(),
         arg2: Some(tween_type.into()),
         arg3: Some(args.join(" ")),
+        wait_type: node.wait_type.clone(),
         ..default()
     };
     tween_cmd(&shake_node, commands, spine_query, tex_query, gui_query);
@@ -1768,6 +1835,7 @@ fn tween_cmd(
     // Graphics = VNSpine + VNTexture
     // Camera = VNGui + VNSpine + VNTexture
     if let Some(t) = Tween::new(node) {
+        let should_wait = should_wait(&node.wait_type);
         macro_rules! absxyz {
             ($p:expr) => {
                 Vec3::new(
@@ -1793,10 +1861,13 @@ fn tween_cmd(
                     t.params.time,
                     $lens { start: $start, end: $end },
                 ).with_repeat_count(t.loop_count).with_repeat_strategy(t.loop_type);
-                commands.spawn((
+                let mut cmd = commands.spawn((
                     TweenAnim::new(tween),
                     AnimTarget::component::<$s>($target),
-                ))
+                ));
+                if should_wait {
+                    cmd.insert(WaitEffect);
+                }
             }};
         }
         fn calc_color(t: &Tween) -> Color {
@@ -1908,6 +1979,9 @@ fn tween_cmd(
                             base_scale: x.3.scale,
                             seed: x.0.to_bits() as u32,
                         });
+                        if should_wait {
+                            commands.entity(x.0).insert(WaitEffect);
+                        }
                     },
                 };
             }
@@ -2004,6 +2078,9 @@ fn tween_cmd(
                             base_scale: x.2.scale,
                             seed: x.0.to_bits() as u32,
                         });
+                        if should_wait {
+                            commands.entity(x.0).insert(WaitEffect);
+                        }
                     },
                 };
             }
@@ -2060,6 +2137,9 @@ fn tween_cmd(
                             base_scale: x.2.scale,
                             seed: x.0.to_bits() as u32,
                         });
+                        if should_wait {
+                            commands.entity(x.0).insert(WaitEffect);
+                        }
                     },
                     _ => {
                         warn!("Unfinished tween type: {:?} for gui", node.arg2)
