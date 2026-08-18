@@ -7,6 +7,8 @@ const ADVFONT: &str = "TT_NPTelopMin-E.ttf";
 const AMBIENCE: &str = "advscene/resources/advscene/sound/ambience/";
 const CHARTEXT: Color = Color::srgb_u8(200, 200, 200);
 const VNTEXT: Color = CHARTEXT;
+const SELECTBG: Color = Color::srgb_u8(24, 24, 24);
+const SELECTBORDER: Color = Color::srgb_u8(0, 0, 0);
 
 const MAXCHARA: u128 = 99;
 const FBCHARA: u8 = 28;

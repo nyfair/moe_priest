@@ -105,8 +105,24 @@ struct ViewRes {
     wait_timer: Option<Timer>,
     pending_effects: u32,
     effect_wait: bool,
-    params: HashMap<String, String>
+    params: HashMap<String, String>,
+    avg_labels: HashMap<String, usize>,
+    selection: Option<SelectionState>,
 }
+
+struct SelectionState {
+    labels: Vec<String>,
+    texts: Vec<String>,
+    index: usize,
+    selected: Option<usize>,
+    ui: Entity,
+}
+
+#[derive(Component)]
+struct SelectionUI;
+
+#[derive(Component)]
+struct SelectionItem(usize);
 
 #[derive(Component)]
 struct SceneMenuList;
@@ -455,6 +471,8 @@ fn setup(
         pending_effects: 0,
         effect_wait: false,
         params: HashMap::new(),
+        avg_labels: HashMap::new(),
+        selection: None,
     });
 
     commands.spawn((
@@ -676,6 +694,11 @@ fn choose_scene(
                         view_res.wait_timer = None;
                         view_res.effect_wait = false;
                         view_res.params = HashMap::new();
+                        view_res.avg_labels = view_res.avg_nodes.iter().enumerate()
+                            .filter(|(_, n)| n.command.as_deref().is_some_and(|c| c.starts_with('*')))
+                            .map(|(i, n)| (n.command.clone().unwrap(), i))
+                            .collect();
+                        view_res.selection = None;
                         vn_ui_msg.write(VNToogleMsg(true));
                     }
                 } else if let Some(file) = view_res.spines.get(bundle_name) {
@@ -853,6 +876,76 @@ fn choose_mode(
     })
 }
 
+fn spawn_selection_ui(
+    asset_server: &Res<AssetServer>,
+    commands: &mut Commands,
+    texts: &[String],
+) -> Entity {
+    let gap = match texts.len() {
+        1..=2 => Val::Percent(12.),
+        3..=4 => Val::Percent(8.),
+        _ => Val::Percent(5.),
+    };
+    commands.spawn((
+        Visibility::Visible,
+        SelectionUI,
+        ZIndex(Z_UI),
+        Node {
+            width: Val::Percent(100.),
+            height: Val::Percent(100.),
+            justify_content: JustifyContent::Center,
+            align_items: AlignItems::Center,
+            flex_direction: FlexDirection::Column,
+            row_gap: gap,
+            ..default()
+        },
+    )).with_children(|parent| {
+        for (i, t) in texts.iter().enumerate() {
+            let mut bg = SELECTBG.to_srgba();
+            if i != 0 {
+                bg.alpha = 0.85;
+            }
+            parent.spawn((
+                Button,
+                SelectionItem(i),
+                Node {
+                    width: Val::Percent(30.),
+                    padding: UiRect::all(Val::Px(20.)),
+                    justify_content: JustifyContent::Center,
+                    align_items: AlignItems::Center,
+                    ..default()
+                },
+                Outline::new(px(4.), Val::ZERO, SELECTBORDER),
+                BackgroundColor(bg.into()),
+            )).with_children(|parent| {
+                parent.spawn((
+                    Text::new(t),
+                    TextFont {
+                        font: asset_server.load(FONT),
+                        font_size: 54.,
+                        ..default()
+                    },
+                    TextColor(VNTEXT),
+                    TextLayout::new_with_justify(Justify::Center),
+                ));
+            });
+        }
+    }).id()
+}
+
+fn selection_highlight(
+    selection_query: &mut Query<(&Interaction, &SelectionItem, &mut BackgroundColor)>,
+    selection: &SelectionState,
+) {
+    selection_query.iter_mut().for_each(|(_, item, mut bg)| {
+        let mut c = SELECTBG.to_srgba();
+        if item.0 != selection.index {
+            c.alpha = 0.85;
+        }
+        bg.0 = c.into();
+    });
+}
+
 fn input_handler(
     mut viewer_ui: Query<&mut Visibility, Without<VNGui>>,
     mut vn_ui: Query<&mut Visibility, With<VNGui>>,
@@ -861,6 +954,7 @@ fn input_handler(
     vn_text: Single<&VNText>,
     button: Res<ButtonInput<MouseButton>>,
     key: Res<ButtonInput<KeyCode>>,
+    mut selection_query: Query<(&Interaction, &SelectionItem, &mut BackgroundColor)>,
     mut view_res: ResMut<ViewRes>,
 ) {
     if button.just_pressed(MouseButton::Right) {
@@ -876,29 +970,58 @@ fn input_handler(
     }
 
     if view_res.avg {
-        if button.just_pressed(MouseButton::Left)
-        || key.just_pressed(KeyCode::Enter) || key.just_pressed(KeyCode::Space) {
-            if view_res.pending_effects > 0 && !view_res.fast && vn_text.finished() {
-                view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
-                view_res.effect_wait = true;
-            } else {
-                vn_msg.write(VNMsg);
-            }
-        }
-        if key.just_pressed(KeyCode::Escape) {
-            view_res.avg = false;
-            view_res.wait_timer = None;
-            view_res.effect_wait = false;
-            vn_ui_msg.write(VNToogleMsg(false));
-        }
         if key.just_released(KeyCode::ControlLeft) || key.just_released(KeyCode::ControlRight) {
             view_res.fast = false;
         }
         if key.pressed(KeyCode::ControlLeft) || key.pressed(KeyCode::ControlRight) {
             view_res.fast = true;
         }
-        if key.just_released(KeyCode::Tab) {
-            view_res.auto = !view_res.auto;
+        if let Some(sel) = &mut view_res.selection {
+            if key.just_pressed(KeyCode::ArrowUp) {
+                sel.index = sel.index.saturating_sub(1);
+                selection_highlight(&mut selection_query, sel);
+            }
+            if key.just_pressed(KeyCode::ArrowDown) && sel.index + 1 < sel.texts.len() {
+                sel.index += 1;
+                selection_highlight(&mut selection_query, sel);
+            }
+            if key.just_pressed(KeyCode::Enter) || key.just_pressed(KeyCode::Space) {
+                sel.selected = Some(sel.index);
+                vn_msg.write(VNMsg);
+            }
+            if let Some(idx) = selection_query.iter()
+                .filter(|(i, _, _)| **i == Interaction::Pressed)
+                .map(|(_, item, _)| item.0)
+                .next() {
+                sel.selected = Some(idx);
+                vn_msg.write(VNMsg);
+            }
+            if key.just_pressed(KeyCode::Escape) {
+                view_res.avg = false;
+                view_res.wait_timer = None;
+                view_res.effect_wait = false;
+                view_res.selection = None;
+                vn_ui_msg.write(VNToogleMsg(false));
+            }
+        } else {
+            if button.just_pressed(MouseButton::Left)
+            || key.just_pressed(KeyCode::Enter) || key.just_pressed(KeyCode::Space) {
+                if view_res.pending_effects > 0 && !view_res.fast && vn_text.finished() {
+                    view_res.wait_timer = Some(Timer::from_seconds(0., TimerMode::Once));
+                    view_res.effect_wait = true;
+                } else {
+                    vn_msg.write(VNMsg);
+                }
+            }
+            if key.just_pressed(KeyCode::Escape) {
+                view_res.avg = false;
+                view_res.wait_timer = None;
+                view_res.effect_wait = false;
+                vn_ui_msg.write(VNToogleMsg(false));
+            }
+            if key.just_released(KeyCode::Tab) {
+                view_res.auto = !view_res.auto;
+            }
         }
     }
 }
@@ -910,9 +1033,10 @@ fn toggle_vn(
     mut text: Single<&mut Text2d, With<VNText>>,
     mut vn_text: Single<&mut VNText>,
     despawn_query: Query<Entity, Or<(With<Spine>, With<AnimeMenuList>)>>,
-    vn_despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<VNTexture>, (With<VNAudio>, Without<AudioFade>), With<WaitEffect>)>>,
+    vn_despawn_query: Query<Entity, Or<(With<FadeOverlay>, With<VNTexture>, (With<VNAudio>, Without<AudioFade>), With<WaitEffect>, With<SelectionUI>)>>,
     mut vn_ui_msg: MessageReader<VNToogleMsg>,
     mut vn_msg: MessageWriter<VNMsg>,
+    mut view_res: ResMut<ViewRes>,
 ) {
     if let Some(msg) = vn_ui_msg.read().last() {
         despawn_query.iter().for_each(|entity| {
@@ -929,6 +1053,7 @@ fn toggle_vn(
             vn_despawn_query.iter().for_each(|entity| {
                 commands.entity(entity).despawn()
             });
+            view_res.selection = None;
             vn_ui.iter_mut().for_each(|mut v| {
                 *v = Visibility::Hidden
             });
@@ -1015,7 +1140,9 @@ fn check_wait(
         }
         if view_res.fast {
             view_res.wait_timer = None;
-            vn_msg.write(VNMsg);
+            if view_res.selection.is_none() {
+                vn_msg.write(VNMsg);
+            }
         } else if let Some(timer) = &mut view_res.wait_timer {
             if !effect_blocked {
                 timer.tick(time.delta());
@@ -1035,6 +1162,7 @@ fn check_auto_forward(
     mut view_res: ResMut<ViewRes>,
 ) {
     if view_res.avg && view_res.auto && !view_res.fast && view_res.wait_timer.is_none()
+        && view_res.selection.is_none()
         && vn_text.finished() && !view_res.forwarded {
             for (_, _, audio) in audio_query.iter() {
                 if audio.0 == AudioType::Voice {
@@ -1215,6 +1343,62 @@ fn play_vn(
                             break;
                         }
                     }
+                    Some("Jump") => {
+                        if let Some(label) = node.arg1.as_deref()
+                            && let Some(&label_index) = view_res.avg_labels.get(label) {
+                            view_res.avg_offset = label_index;
+                        } else {
+                            warn!("Jump label not found: {:?}", node.arg1);
+                        }
+                    }
+                    Some("Selection") => {
+                        if let Some(sel) = &view_res.selection {
+                            if sel.selected.is_none() {
+                                break;
+                            }
+                            let sel = view_res.selection.take().unwrap();
+                            commands.entity(sel.ui).despawn();
+                            if let Some(idx) = sel.selected
+                                && let Some(label) = sel.labels.get(idx)
+                                && let Some(&label_index) = view_res.avg_labels.get(label) {
+                                view_res.avg_offset = label_index;
+                            } else {
+                                warn!("Selection label not found");
+                            }
+                        } else {
+                            let mut labels = Vec::new();
+                            let mut texts = Vec::new();
+                            let mut n = 0;
+                            while n < 6 {
+                                let Some(sn) = view_res.avg_nodes.get(view_res.avg_offset + n) else {
+                                    break;
+                                };
+                                if sn.command.as_deref() != Some("Selection") {
+                                    break;
+                                }
+                                let Some(arg1) = sn.arg1.clone() else {
+                                    break;
+                                };
+                                labels.push(arg1);
+                                texts.push(sn.text.clone().unwrap_or_default());
+                                n += 1;
+                            }
+                            if labels.is_empty() {
+                                warn!("Selection without label");
+                            } else {
+                                let ui = spawn_selection_ui(&asset_server, &mut commands, &texts);
+                                view_res.selection = Some(SelectionState {
+                                    labels,
+                                    texts,
+                                    index: 0,
+                                    selected: None,
+                                    ui,
+                                });
+                                break;
+                            }
+                        }
+                    }
+                    Some(cmd) if cmd.starts_with('*') => {}
                     Some(cmd) => warn!("Command {} Unimplemented", cmd)
                 }
                 view_res.avg_offset += 1;

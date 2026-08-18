@@ -4,6 +4,8 @@ const ADVFONT: &str = "FOT-NewRodinProN-EB.otf";
 const AMBIENCE: &str = "advscene/resources/advscene/sound/se/";
 const CHARTEXT: Color = Color::srgb_u8(237, 221, 192);
 const VNTEXT: Color = Color::srgb_u8(78, 72, 70);
+const SELECTBG: Color = Color::srgb_u8(238, 227, 215);
+const SELECTBORDER: Color = Color::srgb_u8(221, 198, 174);
 
 pub fn get_intro() -> String {
     "ch_30005/general/basic/30005_030.m4a".to_string()
