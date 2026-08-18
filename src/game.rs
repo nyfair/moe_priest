@@ -188,6 +188,33 @@ impl FadeOverlay {
     }
 }
 
+#[derive(PartialEq, Clone, Copy)]
+enum ShakeKind {
+    Punch,
+    Shake,
+}
+
+#[derive(PartialEq, Clone, Copy)]
+enum ShakeAxes {
+    Position,
+    Rotation,
+    Scale,
+}
+
+#[derive(Component)]
+struct ShakeAnim {
+    kind: ShakeKind,
+    axes: ShakeAxes,
+    amp: Vec3,
+    time: f32,
+    duration: f32,
+    delay: f32,
+    base_pos: Vec3,
+    base_rot: Quat,
+    base_scale: Vec3,
+    seed: u32,
+}
+
 #[derive(PartialEq)]
 enum TextureType {
     Bg,
@@ -346,6 +373,7 @@ pub fn play() {
             toggle_vn,
             vn_dialogue,
             fade_overlay,
+            shake_anim,
             fade_sound,
             check_wait,
             check_auto_forward,
@@ -941,6 +969,61 @@ fn fade_overlay(
     })
 }
 
+fn shake_anim(
+    mut commands: Commands,
+    mut query: Query<(Entity, &mut ShakeAnim, &mut Transform)>,
+    time: Res<Time>,
+) {
+    let dt = time.delta_secs();
+    query.iter_mut().for_each(|(entity, mut shake, mut transform)| {
+        if shake.delay > 0. {
+            shake.delay -= dt;
+            return;
+        }
+        shake.time += dt;
+        let t = shake.time / shake.duration.max(1e-6);
+        if t >= 1. {
+            transform.translation = shake.base_pos;
+            transform.rotation = shake.base_rot;
+            transform.scale = shake.base_scale;
+            commands.entity(entity).remove::<ShakeAnim>();
+            return;
+        }
+        let off = match shake.kind {
+            ShakeKind::Punch => {
+                let k = (std::f32::consts::TAU * t).sin() * (1. - t);
+                shake.amp * k
+            }
+            ShakeKind::Shake => {
+                shake.seed = shake.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let rx = ((shake.seed >> 8) as f32 / 16777216.) * 2. - 1.;
+                shake.seed = shake.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let ry = ((shake.seed >> 8) as f32 / 16777216.) * 2. - 1.;
+                shake.seed = shake.seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                let rz = ((shake.seed >> 8) as f32 / 16777216.) * 2. - 1.;
+                shake.amp * Vec3::new(rx, ry, rz) * (1. - t)
+            }
+        };
+        match shake.axes {
+            ShakeAxes::Position => {
+                transform.translation = shake.base_pos + off;
+            }
+            ShakeAxes::Rotation => {
+                let rot = Quat::from_euler(
+                    EulerRot::XYZ,
+                    off.x.to_radians(),
+                    off.y.to_radians(),
+                    off.z.to_radians(),
+                );
+                transform.rotation = shake.base_rot * rot;
+            }
+            ShakeAxes::Scale => {
+                transform.scale = shake.base_scale + off;
+            }
+        }
+    });
+}
+
 fn fade_sound(
     mut commands: Commands,
     mut audio_query: Query<(Entity, &mut AudioSink, &mut AudioFade)>,
@@ -1140,6 +1223,9 @@ fn play_vn(
                         if let Some((k, v)) = param_cmd(node) {
                             view_res.params.insert(k, v);
                         }
+                    }
+                    Some("Shake") => {
+                        shake_cmd(node, &mut commands, &mut spine_query, &mut tex_query, &mut gui_query);
                     }
                     Some("Tween") => {
                         if view_res.spine_cache.is_empty() {
@@ -1641,6 +1727,36 @@ fn param_cmd(node: &utage4::Node) -> Option<(String, String)> {
     None
 }
 
+fn shake_cmd(
+    node: &utage4::Node,
+    commands: &mut Commands,
+    spine_query: &mut Query<(Entity, &mut Spine, &mut VNSpine, &mut Transform), (Without<VNTexture>, Without<VNGui>)>,
+    tex_query: &mut Query<(Entity, &mut VNTexture, &mut Transform, &mut Sprite), (Without<VNSpine>, Without<VNGui>)>,
+    gui_query: &mut Query<(Entity, &VNGui, &mut Transform), (Without<VNSpine>, Without<VNTexture>)>,
+) {
+    let mut args = Vec::new();
+    if let Some(arg3) = node.arg3.as_deref() {
+        args.push(arg3.to_owned());
+    }
+    for (key, val) in [("time", "1"), ("x", "30"), ("y", "30")] {
+        if !args.iter().any(|s| s.split_whitespace().any(|p| p.starts_with(&format!("{key}=")))) {
+            args.push(format!("{key}={val}"));
+        }
+    }
+    let tween_type = node.arg2.as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("ShakePosition");
+    let shake_node = utage4::Node {
+        command: Some("Tween".into()),
+        arg1: node.arg1.clone(),
+        arg2: Some(tween_type.into()),
+        arg3: Some(args.join(" ")),
+        ..default()
+    };
+    tween_cmd(&shake_node, commands, spine_query, tex_query, gui_query);
+}
+
 fn tween_cmd(
     node: &utage4::Node,
     commands: &mut Commands,
@@ -1758,8 +1874,40 @@ fn tween_cmd(
                             tween!(SpineColorLens, Spine, end, start, x.0);
                         }
                     },
-                    _ => {
-                        warn!("Unfinished tween type: {:?} for spine", node.arg2)
+                    TweenType::PunchPosition | TweenType::ShakePosition
+                    | TweenType::PunchRotation | TweenType::ShakeRotation
+                    | TweenType::PunchScale | TweenType::ShakeScale => {
+                        let kind = if matches!(t.tween_type,
+                            TweenType::PunchPosition | TweenType::PunchRotation | TweenType::PunchScale) {
+                            ShakeKind::Punch
+                        } else {
+                            ShakeKind::Shake
+                        };
+                        let axes = if matches!(t.tween_type,
+                            TweenType::PunchPosition | TweenType::ShakePosition) {
+                            ShakeAxes::Position
+                        } else if matches!(t.tween_type,
+                            TweenType::PunchRotation | TweenType::ShakeRotation) {
+                            ShakeAxes::Rotation
+                        } else {
+                            ShakeAxes::Scale
+                        };
+                        let mut amp = absxyz!(0.);
+                        if axes == ShakeAxes::Position {
+                            amp.y *= 0.5;
+                        }
+                        commands.entity(x.0).insert(ShakeAnim {
+                            kind,
+                            axes,
+                            amp,
+                            time: 0.,
+                            duration: t.params.time.as_secs_f32(),
+                            delay: t.params.delay.as_secs_f32(),
+                            base_pos: x.3.translation,
+                            base_rot: x.3.rotation,
+                            base_scale: x.3.scale,
+                            seed: x.0.to_bits() as u32,
+                        });
                     },
                 };
             }
@@ -1826,8 +1974,36 @@ fn tween_cmd(
                             tween!(SpriteColorLens, Sprite, end, x.3.color, x.0);
                         }
                     },
-                    _ => {
-                        warn!("Unfinished tween type: {:?} for texture", node.arg2)
+                    TweenType::PunchPosition | TweenType::ShakePosition
+                    | TweenType::PunchRotation | TweenType::ShakeRotation
+                    | TweenType::PunchScale | TweenType::ShakeScale => {
+                        let kind = if matches!(t.tween_type,
+                            TweenType::PunchPosition | TweenType::PunchRotation | TweenType::PunchScale) {
+                            ShakeKind::Punch
+                        } else {
+                            ShakeKind::Shake
+                        };
+                        let axes = if matches!(t.tween_type,
+                            TweenType::PunchPosition | TweenType::ShakePosition) {
+                            ShakeAxes::Position
+                        } else if matches!(t.tween_type,
+                            TweenType::PunchRotation | TweenType::ShakeRotation) {
+                            ShakeAxes::Rotation
+                        } else {
+                            ShakeAxes::Scale
+                        };
+                        commands.entity(x.0).insert(ShakeAnim {
+                            kind,
+                            axes,
+                            amp: absxyz!(0.),
+                            time: 0.,
+                            duration: t.params.time.as_secs_f32(),
+                            delay: t.params.delay.as_secs_f32(),
+                            base_pos: x.2.translation,
+                            base_rot: x.2.rotation,
+                            base_scale: x.2.scale,
+                            seed: x.0.to_bits() as u32,
+                        });
                     },
                 };
             }
@@ -1853,6 +2029,37 @@ fn tween_cmd(
                         let scale_by = absxyz!(1.);
                         let end = x.2.scale * scale_by;
                         tween!(TransformScaleLens, Transform, x.2.scale, end, x.0);
+                    },
+                    TweenType::PunchPosition | TweenType::ShakePosition
+                    | TweenType::PunchRotation | TweenType::ShakeRotation
+                    | TweenType::PunchScale | TweenType::ShakeScale => {
+                        let kind = if matches!(t.tween_type,
+                            TweenType::PunchPosition | TweenType::PunchRotation | TweenType::PunchScale) {
+                            ShakeKind::Punch
+                        } else {
+                            ShakeKind::Shake
+                        };
+                        let axes = if matches!(t.tween_type,
+                            TweenType::PunchPosition | TweenType::ShakePosition) {
+                            ShakeAxes::Position
+                        } else if matches!(t.tween_type,
+                            TweenType::PunchRotation | TweenType::ShakeRotation) {
+                            ShakeAxes::Rotation
+                        } else {
+                            ShakeAxes::Scale
+                        };
+                        commands.entity(x.0).insert(ShakeAnim {
+                            kind,
+                            axes,
+                            amp: absxyz!(0.),
+                            time: 0.,
+                            duration: t.params.time.as_secs_f32(),
+                            delay: t.params.delay.as_secs_f32(),
+                            base_pos: x.2.translation,
+                            base_rot: x.2.rotation,
+                            base_scale: x.2.scale,
+                            seed: x.0.to_bits() as u32,
+                        });
                     },
                     _ => {
                         warn!("Unfinished tween type: {:?} for gui", node.arg2)

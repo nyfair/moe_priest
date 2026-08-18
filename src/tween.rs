@@ -24,7 +24,7 @@ macro_rules! tween_type {
 
         impl TweenType {
             fn parse(s: &str) -> Option<Self> {
-                match s {
+                match s.trim() {
                     $(stringify!($name) => Some(TweenType::$name),)*
                     _ => None,
                 }
