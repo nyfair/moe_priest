@@ -92,37 +92,20 @@ fn update_materials<T: SpineMaterial>(
         let SpineMeshState::Renderable { info: data } = spine_mesh.state.clone() else {
             continue;
         };
-        if let Some(handle) = material_handle {
-            let mut remove_material = false;
-            let material_to_add = match materials.get_mut(handle.clone()) {
-                Some(mut material) => match T::update(
-                    Some(material.clone()),
-                    spine_mesh.spine_entity,
-                    data.clone(),
-                    &params,
-                ) {
-                    Some(new_material) => {
-                        *material = new_material;
-                        None
-                    }
-                    None => {
-                        remove_material = true;
-                        None
-                    }
-                },
-                None => T::update(None, spine_mesh.spine_entity, data, &params),
-            };
-
-            if remove_material {
+        if let Some((material, handle)) =
+            material_handle.and_then(|handle| materials.get_mut(handle.clone()).zip(Some(handle)))
+        {
+            if let Some(new_material) = T::update(
+                Some(material.clone()),
+                spine_mesh.spine_entity,
+                data,
+                &params,
+            ) {
+                *material = new_material;
+            } else {
                 materials.remove(handle.clone());
                 if let Ok(mut entity_commands) = commands.get_entity(mesh_entity) {
                     entity_commands.remove::<T::MeshMaterial>();
-                }
-            } else if let Some(material) = material_to_add {
-                let handle = materials.add(material);
-                if let Ok(mut entity_commands) = commands.get_entity(mesh_entity) {
-                    entity_commands
-                        .insert(<T::MeshMaterial as From<Handle<T::Material>>>::from(handle));
                 }
             }
         } else if let Some(material) = T::update(None, spine_mesh.spine_entity, data, &params) {

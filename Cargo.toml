@@ -4,30 +4,34 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-bevy = { version = "0.19", default-features = false, features = [
-    "bevy_audio",
+bevy = { version = "0.18", default-features = false, features = [
     "bevy_log",
     "bevy_ui_render",
-    "bevy_ui_widgets",
     "bevy_winit",
-    "mp4",
     "png",
+    "symphonia-aac",
+    "symphonia-isomp4",
     "ui_picking",
     "wav",
     "wayland",
+    "experimental_bevy_ui_widgets",
 ] }
 bevy_auto_scaling = { path = "bevy_auto_scaling" }
 bevy_spine38 = { path = "bevy_spine38" }
 bevy_spine42 = { path = "bevy_spine42" }
-bevy_transform_interpolation = "0.5"
-bevy_tweening = "0.16"
+bevy_transform_interpolation = "0.4"
+bevy_tweening = "0.15"
 regex = "1"
+
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
 # disable log in compile time
 log = { version = "0", features = ["release_max_level_off"] }
 tracing = { version = "0", features = ["release_max_level_off"] }
+
+# wait for https://github.com/bevyengine/bevy/pull/20323
+symphonia-core = "=0.5.4"
 
 [profile.release]
 strip = true
