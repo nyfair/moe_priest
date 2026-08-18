@@ -190,33 +190,6 @@ impl FadeOverlay {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
-enum ShakeKind {
-    Punch,
-    Shake,
-}
-
-#[derive(PartialEq, Clone, Copy)]
-enum ShakeAxes {
-    Position,
-    Rotation,
-    Scale,
-}
-
-#[derive(Component)]
-struct ShakeAnim {
-    kind: ShakeKind,
-    axes: ShakeAxes,
-    amp: Vec3,
-    time: f32,
-    duration: f32,
-    delay: f32,
-    base_pos: Vec3,
-    base_rot: Quat,
-    base_scale: Vec3,
-    seed: u32,
-}
-
 // marker for effects that require waiting (WaitType != NoWait)
 #[derive(Component)]
 struct WaitEffect;
@@ -1007,62 +980,6 @@ fn fade_overlay(
     })
 }
 
-fn shake_anim(
-    mut commands: Commands,
-    mut query: Query<(Entity, &mut ShakeAnim, &mut Transform)>,
-    time: Res<Time>,
-) {
-    let dt = time.delta_secs();
-    query.iter_mut().for_each(|(entity, mut shake, mut transform)| {
-        if shake.delay > 0. {
-            shake.delay -= dt;
-            return;
-        }
-        shake.time += dt;
-        let t = shake.time / shake.duration.max(1e-6);
-        if t >= 1. {
-            transform.translation = shake.base_pos;
-            transform.rotation = shake.base_rot;
-            transform.scale = shake.base_scale;
-            commands.entity(entity).remove::<ShakeAnim>();
-            commands.entity(entity).remove::<WaitEffect>();
-            return;
-        }
-        let off = match shake.kind {
-            ShakeKind::Punch => {
-                let k = (std::f32::consts::TAU * t).sin() * (1. - t);
-                shake.amp * k
-            }
-            ShakeKind::Shake => {
-                shake.seed = shake.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-                let rx = ((shake.seed >> 8) as f32 / 16777216.) * 2. - 1.;
-                shake.seed = shake.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-                let ry = ((shake.seed >> 8) as f32 / 16777216.) * 2. - 1.;
-                shake.seed = shake.seed.wrapping_mul(1664525).wrapping_add(1013904223);
-                let rz = ((shake.seed >> 8) as f32 / 16777216.) * 2. - 1.;
-                shake.amp * Vec3::new(rx, ry, rz) * (1. - t)
-            }
-        };
-        match shake.axes {
-            ShakeAxes::Position => {
-                transform.translation = shake.base_pos + off;
-            }
-            ShakeAxes::Rotation => {
-                let rot = Quat::from_euler(
-                    EulerRot::XYZ,
-                    off.x.to_radians(),
-                    off.y.to_radians(),
-                    off.z.to_radians(),
-                );
-                transform.rotation = shake.base_rot * rot;
-            }
-            ShakeAxes::Scale => {
-                transform.scale = shake.base_scale + off;
-            }
-        }
-    });
-}
-
 fn fade_sound(
     mut commands: Commands,
     mut audio_query: Query<(Entity, &mut AudioSink, &mut AudioFade)>,
@@ -1426,8 +1343,12 @@ fn default_cmd(
             if let (Some(l), Some(r)) = (file_name.rfind('/'), file_name.rfind('.')) && l < r {
                 let path = file_name[..l].to_string();
                 if let Some(rr) = path.rfind('/') {
-                    let bundle_name = path[rr+1..].to_string().to_lowercase();
-                    if let Some(file) = view_res.spines.get(&bundle_name) {
+                    let bundle_name = path[rr+1..].to_string();
+                    if let Some(file) = view_res.spines.get(&bundle_name).or_else(|| {
+                        view_res.spines.iter()
+                            .find(|(k, _)| k.eq_ignore_ascii_case(&bundle_name))
+                            .map(|(_, v)| v)
+                    }) {
                         let skeleton = if file.ext == "skel" {
                             SkeletonData::new_from_binary(
                                 asset_server.load(format!("{}/{}.{}", file.path, file.name, file.ext)),
@@ -1946,40 +1867,13 @@ fn tween_cmd(
                     TweenType::PunchPosition | TweenType::ShakePosition
                     | TweenType::PunchRotation | TweenType::ShakeRotation
                     | TweenType::PunchScale | TweenType::ShakeScale => {
-                        let kind = if matches!(t.tween_type,
-                            TweenType::PunchPosition | TweenType::PunchRotation | TweenType::PunchScale) {
-                            ShakeKind::Punch
-                        } else {
-                            ShakeKind::Shake
-                        };
-                        let axes = if matches!(t.tween_type,
-                            TweenType::PunchPosition | TweenType::ShakePosition) {
-                            ShakeAxes::Position
-                        } else if matches!(t.tween_type,
-                            TweenType::PunchRotation | TweenType::ShakeRotation) {
-                            ShakeAxes::Rotation
-                        } else {
-                            ShakeAxes::Scale
-                        };
                         let mut amp = absxyz!(0.);
-                        if axes == ShakeAxes::Position {
+                        if matches!(t.tween_type,
+                            TweenType::PunchPosition | TweenType::ShakePosition) {
                             amp.y *= 0.5;
                         }
-                        commands.entity(x.0).insert(ShakeAnim {
-                            kind,
-                            axes,
-                            amp,
-                            time: 0.,
-                            duration: t.params.time.as_secs_f32(),
-                            delay: t.params.delay.as_secs_f32(),
-                            base_pos: x.3.translation,
-                            base_rot: x.3.rotation,
-                            base_scale: x.3.scale,
-                            seed: x.0.to_bits() as u32,
-                        });
-                        if should_wait {
-                            commands.entity(x.0).insert(WaitEffect);
-                        }
+                        spawn_shake(commands, x.0, &t.tween_type, amp, t.params.time, t.params.delay,
+                            (x.3.translation, x.3.rotation, x.3.scale), should_wait);
                     },
                 };
             }
@@ -2049,36 +1943,8 @@ fn tween_cmd(
                     TweenType::PunchPosition | TweenType::ShakePosition
                     | TweenType::PunchRotation | TweenType::ShakeRotation
                     | TweenType::PunchScale | TweenType::ShakeScale => {
-                        let kind = if matches!(t.tween_type,
-                            TweenType::PunchPosition | TweenType::PunchRotation | TweenType::PunchScale) {
-                            ShakeKind::Punch
-                        } else {
-                            ShakeKind::Shake
-                        };
-                        let axes = if matches!(t.tween_type,
-                            TweenType::PunchPosition | TweenType::ShakePosition) {
-                            ShakeAxes::Position
-                        } else if matches!(t.tween_type,
-                            TweenType::PunchRotation | TweenType::ShakeRotation) {
-                            ShakeAxes::Rotation
-                        } else {
-                            ShakeAxes::Scale
-                        };
-                        commands.entity(x.0).insert(ShakeAnim {
-                            kind,
-                            axes,
-                            amp: absxyz!(0.),
-                            time: 0.,
-                            duration: t.params.time.as_secs_f32(),
-                            delay: t.params.delay.as_secs_f32(),
-                            base_pos: x.2.translation,
-                            base_rot: x.2.rotation,
-                            base_scale: x.2.scale,
-                            seed: x.0.to_bits() as u32,
-                        });
-                        if should_wait {
-                            commands.entity(x.0).insert(WaitEffect);
-                        }
+                        spawn_shake(commands, x.0, &t.tween_type, absxyz!(0.), t.params.time, t.params.delay,
+                            (x.2.translation, x.2.rotation, x.2.scale), should_wait);
                     },
                 };
             }
@@ -2108,36 +1974,8 @@ fn tween_cmd(
                     TweenType::PunchPosition | TweenType::ShakePosition
                     | TweenType::PunchRotation | TweenType::ShakeRotation
                     | TweenType::PunchScale | TweenType::ShakeScale => {
-                        let kind = if matches!(t.tween_type,
-                            TweenType::PunchPosition | TweenType::PunchRotation | TweenType::PunchScale) {
-                            ShakeKind::Punch
-                        } else {
-                            ShakeKind::Shake
-                        };
-                        let axes = if matches!(t.tween_type,
-                            TweenType::PunchPosition | TweenType::ShakePosition) {
-                            ShakeAxes::Position
-                        } else if matches!(t.tween_type,
-                            TweenType::PunchRotation | TweenType::ShakeRotation) {
-                            ShakeAxes::Rotation
-                        } else {
-                            ShakeAxes::Scale
-                        };
-                        commands.entity(x.0).insert(ShakeAnim {
-                            kind,
-                            axes,
-                            amp: absxyz!(0.),
-                            time: 0.,
-                            duration: t.params.time.as_secs_f32(),
-                            delay: t.params.delay.as_secs_f32(),
-                            base_pos: x.2.translation,
-                            base_rot: x.2.rotation,
-                            base_scale: x.2.scale,
-                            seed: x.0.to_bits() as u32,
-                        });
-                        if should_wait {
-                            commands.entity(x.0).insert(WaitEffect);
-                        }
+                        spawn_shake(commands, x.0, &t.tween_type, absxyz!(0.), t.params.time, t.params.delay,
+                            (x.2.translation, x.2.rotation, x.2.scale), should_wait);
                     },
                     _ => {
                         warn!("Unfinished tween type: {:?} for gui", node.arg2)
