@@ -44,7 +44,7 @@ jobs:
         file_glob: true
 
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
     - uses: actions/checkout@v6
     - name: Setup UPX
@@ -76,16 +76,18 @@ jobs:
     runs-on: ubuntu-26.04-arm
     steps:
     - uses: actions/checkout@v6
+    - name: Setup UPX
+      uses: crazy-max/ghaction-upx@v4
     - name: Compile
       run: |
         sudo apt-get update && sudo apt-get --assume-yes install libwayland-dev libasound2-dev
         rustup set profile minimal
         rustup update
-        sed -i '/lto/d' Cargo.toml
         cargo build --release
         mv target/release/* .
         rm *.d
         mv moe* td
+        upx --ultra-brute td
         7z a linux_arm64.7z td
     - name: Upload
       uses: svenstaro/upload-release-action@v2

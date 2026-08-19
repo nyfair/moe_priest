@@ -5,7 +5,7 @@ use bevy::audio::{PlaybackMode, Volume};
 use bevy::input::mouse::{MouseMotion, MouseWheel};
 use bevy::prelude::*;
 use bevy::sprite::Anchor;
-use bevy::ui_widgets::{ControlOrientation, CoreScrollbarThumb, Scrollbar, ScrollbarPlugin};
+use bevy::ui_widgets::{ControlOrientation, Scrollbar, ScrollbarThumb};
 use bevy::window::{PrimaryWindow, WindowMode, WindowResolution};
 use bevy_auto_scaling::{AspectRatio, ScalePlugin, ScalingUI, fixed_size_2d};
 use bevy_spine::prelude::*;
@@ -352,20 +352,19 @@ pub fn play() {
     App::new()
         .add_plugins((
             DefaultPlugins.set(
-            WindowPlugin {
-                primary_window: Some(Window {
-                    mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
-                    // present_mode: PresentMode::Immediate,
-                    resolution: WindowResolution::new(3840, 2160).with_scale_factor_override(1.),
+                WindowPlugin {
+                    primary_window: Some(Window {
+                        mode: WindowMode::BorderlessFullscreen(MonitorSelection::Current),
+                        // present_mode: PresentMode::Immediate,
+                        resolution: WindowResolution::new(3840, 2160).with_scale_factor_override(1.),
+                        ..default()
+                    }),
                     ..default()
-                }),
-                ..default()
-            }
-        ),
+                }
+            ),
             // FrameTimeDiagnosticsPlugin::default(),
             // LogDiagnosticsPlugin::default(),
             ScalePlugin,
-            ScrollbarPlugin,
             SpinePlugin,
             TransformInterpolationPlugin::interpolate_all(),
             TweeningPlugin,
@@ -495,8 +494,8 @@ fn setup(
                 Text::new(m),
                 ModeMenu,
                 TextFont {
-                    font: asset_server.load(FONT),
-                    font_size: 42.,
+                    font: asset_server.load(FONT).into(),
+                    font_size: FontSize::Px(42.),
                     ..default()
                 },
                 TextColor(HEADTEXT),
@@ -525,33 +524,33 @@ fn setup(
         Visibility::Hidden,
         ZIndex(Z_TEXT),
         Text2d::new(""),
-        TextLayout::new_with_justify(Justify::Left),
+        TextLayout::justify(Justify::Left),
         Anchor::CENTER_LEFT,
         VNGui,
         VNChar,
         TextFont {
-            font: asset_server.load(ADVFONT),
-            font_size: 136.,
+            font: asset_server.load(ADVFONT).into(),
+            font_size: FontSize::Px(136.),
             ..default()
         },
         TextColor(CHARTEXT),
-        Transform::from_translation(Vec3::new(-572., -366., Z_UI as f32)).with_scale(Vec3::ONE / 4.),
+        Transform::from_translation(Vec3::new(-572., -366., (Z_UI + 1) as f32)).with_scale(Vec3::ONE / 4.),
     ));
     commands.spawn((
         Visibility::Hidden,
         ZIndex(Z_TEXT),
         Text2d::new(""),
-        TextLayout::new_with_justify(Justify::Left),
+        TextLayout::justify(Justify::Left),
         Anchor::TOP_LEFT,
         VNGui,
         VNText::new(),
         TextFont {
-            font: asset_server.load(ADVFONT),
-            font_size: 136.,
+            font: asset_server.load(ADVFONT).into(),
+            font_size: FontSize::Px(136.),
             ..default()
         },
         TextColor(VNTEXT),
-        Transform::from_translation(Vec3::new(-550., -420., Z_UI as f32)).with_scale(Vec3::ONE / 4.),
+        Transform::from_translation(Vec3::new(-550., -420., (Z_UI + 1) as f32)).with_scale(Vec3::ONE / 4.),
     ));
 }
 
@@ -597,12 +596,12 @@ fn list_scene(
             parent.spawn((
                 Text::new("Select Scenario"),
                 TextFont {
-                    font: asset_server.load(FONT),
-                    font_size: 42.,
+                    font: asset_server.load(FONT).into(),
+                    font_size: FontSize::Px(42.),
                     ..default()
                 },
                 TextColor(HEADTEXT),
-                TextLayout::new_with_justify(Justify::Right),
+                TextLayout::justify(Justify::Right),
             ));
             parent.spawn(Node {
                 display: Display::Grid,
@@ -630,13 +629,13 @@ fn list_scene(
                             Text::new(bundle_name),
                             SceneMenu,
                             TextFont {
-                                font: asset_server.load(FONT),
-                                font_size: 36.,
+                                font: asset_server.load(FONT).into(),
+                                font_size: FontSize::Px(36.),
                                 ..default()
                             },
                             TextColor(LISTTEXT),
                             BackgroundColor(Color::NONE),
-                            TextLayout::new_with_justify(Justify::Right),
+                            TextLayout::justify(Justify::Right),
                         ));
                     }
                 }).id();
@@ -656,7 +655,10 @@ fn list_scene(
                             ..default()
                         },
                         BackgroundColor(HOVERBG),
-                        CoreScrollbarThumb,
+                        ScrollbarThumb {
+                            border_radius: BorderRadius::all(px(8)),
+                            border: px(1).all(),
+                        },
                     ))),
                 ));
             });
@@ -778,8 +780,8 @@ fn spine_spawn(
                     Button,
                     Text::new("Select Action"),
                     TextFont {
-                        font: asset_server.load(FONT),
-                        font_size: 42.,
+                        font: asset_server.load(FONT).into(),
+                        font_size: FontSize::Px(42.),
                         ..default()
                     },
                     TextColor(HEADTEXT),
@@ -791,8 +793,8 @@ fn spine_spawn(
                         Text::new(animation),
                         AnimeMenu,
                         TextFont {
-                            font: asset_server.load(FONT),
-                            font_size: 35.,
+                            font: asset_server.load(FONT).into(),
+                            font_size: FontSize::Px(35.),
                             ..default()
                         },
                         TextColor(LISTTEXT),
@@ -921,12 +923,12 @@ fn spawn_selection_ui(
                 parent.spawn((
                     Text::new(t),
                     TextFont {
-                        font: asset_server.load(FONT),
-                        font_size: 54.,
+                        font: asset_server.load(FONT).into(),
+                        font_size: FontSize::Px(54.),
                         ..default()
                     },
                     TextColor(VNTEXT),
-                    TextLayout::new_with_justify(Justify::Center),
+                    TextLayout::justify(Justify::Center),
                 ));
             });
         }
